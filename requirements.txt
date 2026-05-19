@@ -2,9 +2,11 @@ numpy
 scipy
 soundfile
 PyYAML
-sounddevice
 pydantic
 
-# Web UI (optional — only needed for --gui)
+# Web UI
 fastapi
 uvicorn[standard]
+
+# Optional — local audio playback (not needed for web deployment)
+# sounddevice
