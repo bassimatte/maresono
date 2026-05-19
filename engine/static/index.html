@@ -178,21 +178,23 @@
     }
 
     .actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      justify-content: center;
       gap: 12px;
     }
 
     .action-btn {
-      padding: 14px 16px;
+      padding: 14px 32px;
       background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.38));
       color: #ecfffd;
       font-weight: 600;
       letter-spacing: 0.04em;
+      min-width: 160px;
     }
 
     .action-btn:not(.secondary):not(:disabled) {
       animation: breathe 3s ease-in-out infinite;
+      font-size: 1.05rem;
     }
 
     .action-btn.playing {
@@ -203,6 +205,9 @@
     .action-btn.secondary {
       background: rgba(255, 255, 255, 0.04);
       border-color: rgba(142, 169, 191, 0.16);
+      font-size: 0.88rem;
+      padding: 12px 24px;
+      min-width: 140px;
     }
 
     .action-btn:hover,
@@ -228,8 +233,37 @@
       font-size: 0.9rem;
     }
 
+    .generating-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px;
+      color: var(--accent);
+      font-size: 0.92rem;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      animation: pulse-opacity 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-opacity {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      margin: 20px 0 12px;
+    }
+
     .duration-section {
       transition: opacity 0.4s ease, max-height 0.4s ease;
+      opacity: 0.7;
+    }
+
+    .duration-section:hover {
+      opacity: 1;
     }
 
     .duration-section.dimmed {
@@ -392,7 +426,10 @@
     <section class="controls">
       <div class="actions">
         <button id="playBtn" class="action-btn">▶ PLAY</button>
-        <button id="exportBtn" class="action-btn secondary">↓ EXPORT</button>
+      </div>
+
+      <div id="generatingOverlay" class="generating-overlay" style="display:none;">
+        <span class="spinner active"></span> Generating first wave...
       </div>
 
       <div class="field">
@@ -426,9 +463,20 @@
         </div>
       </div>
 
+      <div class="status-row">
+        <span id="spinner" class="spinner"></span>
+        <span id="statusText">Ready.</span>
+      </div>
+      <div class="meter-bar-wrap">
+        <div id="meterBar" class="meter-bar"></div>
+      </div>
+      <div id="statusSub" class="status-sub">idle</div>
+
+      <hr class="divider" />
+
       <div class="field duration-section">
         <div class="field-head">
-          <span>Duration</span>
+          <span>Export Duration</span>
           <span id="durationValue">5m</span>
         </div>
         <div class="duration-grid" id="durationGrid">
@@ -440,15 +488,9 @@
         </div>
         <div class="footnote">∞ exports a long-form 120m drift.</div>
       </div>
-
-      <div class="status-row">
-        <span id="spinner" class="spinner"></span>
-        <span id="statusText">Ready.</span>
+      <div class="actions">
+        <button id="exportBtn" class="action-btn secondary">↓ EXPORT WAV</button>
       </div>
-      <div class="meter-bar-wrap">
-        <div id="meterBar" class="meter-bar"></div>
-      </div>
-      <div id="statusSub" class="status-sub">idle</div>
     </section>
   </main>
 
@@ -481,6 +523,7 @@
     const durationSection = document.querySelector('.duration-section');
     const playBtn = document.getElementById('playBtn');
     const exportBtn = document.getElementById('exportBtn');
+    const generatingOverlay = document.getElementById('generatingOverlay');
     const statusText = document.getElementById('statusText');
     const statusSub = document.getElementById('statusSub');
     const spinner = document.getElementById('spinner');
@@ -502,6 +545,7 @@
     let lastFrameTime = 0;
     let precachedBuffer = null;
     let precaching = false;
+    let paramChanged = false;
     const activeChunks = new Set();
 
     const friendlyName = (fileName) => fileName
@@ -800,10 +844,18 @@
       while (isPlaying && token === playbackToken) {
         const scheduled = scheduleChunk(buffer, startTime, token);
         const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime - scheduled.fade);
+
+        // Wait until it's time to fetch next chunk, but break early if params changed
         const waitMs = Math.max(0, (nextStart - audioContext.currentTime - PREFETCH_LEAD_SECONDS) * 1000);
-        if (waitMs > 0) {
-          await sleep(waitMs);
+        if (waitMs > 0 && !paramChanged) {
+          const step = 200;
+          let waited = 0;
+          while (waited < waitMs && !paramChanged && isPlaying && token === playbackToken) {
+            await sleep(Math.min(step, waitMs - waited));
+            waited += step;
+          }
         }
+        paramChanged = false;
 
         let nextBuffer = null;
         while (isPlaying && token === playbackToken && !nextBuffer) {
@@ -828,6 +880,7 @@
     async function preview() {
       if (isPlaying) {
         await stopPlayback({ fade: true, status: 'Stopped.' });
+        generatingOverlay.style.display = 'none';
         return;
       }
 
@@ -836,6 +889,7 @@
         return;
       }
 
+      generatingOverlay.style.display = 'flex';
       setBusy(true, 'Generating first wave...');
       await stopPlayback({ fade: false, status: 'Ready.' });
 
@@ -869,6 +923,7 @@
         statusSub.textContent = 'playing...';
         setStatus(`Playing ${friendlyName(modelSelect.value)} — always evolving...`);
         setBusy(false);
+        generatingOverlay.style.display = 'none';
 
         streamChunks(decoded, token).catch(async (error) => {
           if (token !== playbackToken) return;
@@ -877,6 +932,7 @@
       } catch (error) {
         await stopPlayback({ fade: false, status: error.message || 'Playback failed.' });
         setBusy(false);
+        generatingOverlay.style.display = 'none';
       }
     }
 
@@ -943,6 +999,10 @@
           modelSelect.appendChild(option);
         });
 
+        // Default to Calma if available
+        const calma = models.find(m => m.toLowerCase().includes('calma'));
+        if (calma) modelSelect.value = calma;
+
         loaded = true;
         setStatus('Ready.');
       } catch (error) {
@@ -958,6 +1018,19 @@
     }
 
     intensitySlider.addEventListener('input', updateIntensity);
+    // Live parameter: changing intensity interrupts current chunk fetch
+    intensitySlider.addEventListener('change', () => {
+      if (isPlaying) {
+        // Signal current streamChunks to re-fetch with new intensity
+        paramChanged = true;
+      }
+    });
+    // Live parameter: changing model restarts playback immediately
+    modelSelect.addEventListener('change', () => {
+      if (isPlaying) {
+        stopPlayback({ fade: false, status: '' }).then(() => preview());
+      }
+    });
     volumeSlider.addEventListener('input', () => updateVolume(true));
     durationButtons.forEach((button) => {
       button.addEventListener('click', () => activateDuration(button));
