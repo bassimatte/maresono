@@ -3,7 +3,6 @@ __pycache__/
 *.pyo
 exports/
 output_*.wav
-*.wav
 .env
 venv/
 presets/

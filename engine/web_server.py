@@ -24,14 +24,14 @@ except ImportError as exc:
     ) from exc
 
 from . import config
-from .spectral_model import SpectralSynthesizer, learn_from_file
+from .spectral_model import SpectralModel, SpectralSynthesizer
 
 _ENGINE_DIR = Path(__file__).resolve().parent
 _REPO_DIR = _ENGINE_DIR.parent
 _STATIC_DIR = _ENGINE_DIR / "static"
 _INDEX_FILE = _STATIC_DIR / "index.html"
 _EXPORTS_DIR = _REPO_DIR / "exports"
-_DEFAULT_MODELS_DIR = _REPO_DIR.parent / "reference_recordings"
+_DEFAULT_MODELS_DIR = _REPO_DIR / "models"
 _PREVIEW_SECONDS = 20.0
 
 _EXPORTS_DIR.mkdir(exist_ok=True)
@@ -66,25 +66,27 @@ def _available_model_paths() -> list[Path]:
     models_dir = _models_dir()
     if not models_dir.exists():
         return []
-    return sorted(models_dir.glob("*.wav"), key=lambda path: path.name.lower())
+    return sorted(models_dir.glob("*.npz"), key=lambda path: path.name.lower())
 
 
 def _resolve_model_path(filename: str) -> Path:
     safe_name = Path(filename).name
+    if not safe_name.endswith('.npz'):
+        safe_name = Path(safe_name).stem + '.npz'
     models_root = _models_dir().resolve()
     path = (models_root / safe_name).resolve()
     try:
         path.relative_to(models_root)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="Invalid model path.") from exc
-    if not path.exists() or path.suffix.lower() != ".wav":
-        raise HTTPException(status_code=404, detail="Model not found.")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Model not found: {safe_name}")
     return path
 
 
 @lru_cache(maxsize=16)
 def _load_learned_model_from_path(path_str: str):
-    return learn_from_file(path_str)
+    return SpectralModel.load(Path(path_str))
 
 
 def _load_learned_model(filename: str):

@@ -12,6 +12,8 @@ This produces sound that is spectrally identical to the real instrument,
 with natural wave-like dynamics, but infinitely generatable (not a loop).
 """
 
+from pathlib import Path
+
 import numpy as np
 from scipy.signal import stft, butter, sosfilt
 from scipy.interpolate import interp1d
@@ -87,6 +89,50 @@ class SpectralModel:
             spectral_flux['quiet_spectrum'] = np.mean(magnitude[:, quiet_mask], axis=1)
 
         return cls(avg_spectrum_smooth, f, amp_stats, spectral_flux)
+
+    def save(self, path: Path):
+        """Save pre-computed model to .npz file."""
+        data = {
+            'avg_spectrum': self.avg_spectrum,
+            'freqs': self.freqs,
+            'amp_mean': self.amp_stats['mean'],
+            'amp_std': self.amp_stats['std'],
+            'amp_min': self.amp_stats['min'],
+            'amp_max': self.amp_stats['max'],
+            'amp_period_seconds': self.amp_stats['period_seconds'],
+            'amp_envelope_pattern': self.amp_stats['envelope_pattern'],
+            'centroid_mean': self.spectral_flux['centroid_mean'],
+            'centroid_std': self.spectral_flux['centroid_std'],
+            'centroid_vs_amplitude': self.spectral_flux['centroid_vs_amplitude'],
+        }
+        if self.spectral_flux.get('bright_spectrum') is not None:
+            data['bright_spectrum'] = self.spectral_flux['bright_spectrum']
+        if self.spectral_flux.get('quiet_spectrum') is not None:
+            data['quiet_spectrum'] = self.spectral_flux['quiet_spectrum']
+        np.savez_compressed(path, **data)
+
+    @classmethod
+    def load(cls, path: Path) -> 'SpectralModel':
+        """Load a pre-computed model from .npz file."""
+        with np.load(path, allow_pickle=False) as data:
+            avg_spectrum = data['avg_spectrum']
+            freqs = data['freqs']
+            amp_stats = {
+                'mean': float(data['amp_mean']),
+                'std': float(data['amp_std']),
+                'min': float(data['amp_min']),
+                'max': float(data['amp_max']),
+                'period_seconds': float(data['amp_period_seconds']),
+                'envelope_pattern': data['amp_envelope_pattern'],
+            }
+            spectral_flux = {
+                'centroid_mean': float(data['centroid_mean']),
+                'centroid_std': float(data['centroid_std']),
+                'centroid_vs_amplitude': float(data['centroid_vs_amplitude']),
+                'bright_spectrum': data['bright_spectrum'] if 'bright_spectrum' in data else None,
+                'quiet_spectrum': data['quiet_spectrum'] if 'quiet_spectrum' in data else None,
+            }
+        return cls(avg_spectrum, freqs, amp_stats, spectral_flux)
 
     @staticmethod
     def _detect_period(envelope: np.ndarray, fps: float) -> float:

@@ -37,11 +37,32 @@ python main.py --gui                      # launch web UI in browser
 pip install -r requirements.txt
 ```
 
+## Pre-computed Models
+
+Maresono now loads pre-computed spectral models from `models/*.npz` at runtime.
+The original WAV reference recordings are only needed during the training step.
+
+To add or refresh models:
+
+```bash
+python train.py
+python train.py --input ../reference_recordings --output models
+```
+
+Workflow:
+1. Place a new reference WAV in `../reference_recordings/`
+2. Run `python train.py`
+3. Commit the generated `.npz` file from `models/`
+
+At runtime, Maresono only needs the small `.npz` model files; the WAV files are not required.
+The `MARESONO_MODELS_DIR` environment variable can still override the default model directory.
+
 ## How It Works
 
 Maresono uses an analysis-resynthesis approach:
 1. Learns the spectral envelope (frequency shape) from a reference recording
-2. Extracts amplitude dynamics and brightness variation statistics
-3. Generates new audio by shaping noise with FIR filters matched to the learned spectrum
-4. Applies multi-layer amplitude modulation for natural wave dynamics
-5. Crossfades between quiet/bright/wash spectra based on wave phase
+2. Pre-computes and saves the learned spectral statistics as a compact `.npz` model
+3. Loads the `.npz` model at runtime
+4. Generates new audio by shaping noise with FIR filters matched to the learned spectrum
+5. Applies multi-layer amplitude modulation for natural wave dynamics
+6. Crossfades between quiet/bright/wash spectra based on wave phase
