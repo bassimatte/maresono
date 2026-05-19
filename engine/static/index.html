@@ -1,0 +1,1001 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Maresono</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M2 20 C8 14, 12 26, 16 20 S24 14, 30 20' fill='none' stroke='%232dd4bf' stroke-width='3' stroke-linecap='round'/></svg>" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,300&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0a1628;
+      --panel: rgba(17, 30, 52, 0.72);
+      --panel-border: rgba(123, 211, 198, 0.16);
+      --text: #e6f7f5;
+      --muted: #8ea9bf;
+      --accent: #2dd4bf;
+      --accent-soft: rgba(45, 212, 191, 0.16);
+      --accent-strong: rgba(45, 212, 191, 0.38);
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+      --radius: 12px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+      font-family: Inter, system-ui, sans-serif;
+      background:
+        radial-gradient(circle at top, rgba(45, 212, 191, 0.14), transparent 34%),
+        linear-gradient(180deg, #0d1b31 0%, var(--bg) 100%);
+      color: var(--text);
+    }
+
+    .shell {
+      width: min(100%, 480px);
+      padding: 28px;
+      border: 1px solid var(--panel-border);
+      border-radius: 24px;
+      background: var(--panel);
+      backdrop-filter: blur(22px);
+      box-shadow: var(--shadow);
+      position: relative;
+    }
+
+    h1 {
+      margin: 0;
+      text-align: center;
+      font-size: clamp(2rem, 7vw, 2.8rem);
+      letter-spacing: 0.32em;
+      color: var(--accent);
+    }
+
+    .subtitle {
+      margin: 8px 0 24px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.95rem;
+      font-weight: 300;
+      font-style: italic;
+    }
+
+    .orb-wrap {
+      display: grid;
+      place-items: center;
+      margin: -28px -28px 20px -28px;
+    }
+
+    .wave-canvas {
+      width: 100% !important;
+      height: auto;
+      aspect-ratio: 16 / 7;
+      border-radius: 22px 22px 0 0;
+      background:
+        radial-gradient(circle at top, rgba(45, 212, 191, 0.12), transparent 52%),
+        linear-gradient(180deg, rgba(6, 16, 31, 0.88), rgba(7, 20, 36, 0.56));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 0 24px rgba(45, 212, 191, 0.12);
+      filter: drop-shadow(0 0 16px rgba(45, 212, 191, 0.18));
+    }
+
+    .controls {
+      display: grid;
+      gap: 18px;
+    }
+
+    .slider-pair {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+    }
+
+    .field label,
+    .field-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 0.92rem;
+      color: var(--muted);
+    }
+
+    select,
+    button {
+      font: inherit;
+    }
+
+    select {
+      width: 100%;
+      border: 1px solid rgba(142, 169, 191, 0.18);
+      border-radius: 10px;
+      padding: 14px 16px;
+      background: rgba(8, 17, 31, 0.9);
+      color: var(--text);
+      outline: none;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      appearance: none;
+      height: 6px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(45, 212, 191, 0.24), rgba(45, 212, 191, 0.88));
+      outline: none;
+    }
+
+    input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: #d9fffb;
+      border: 2px solid var(--accent);
+      box-shadow: 0 0 0 4px rgba(45, 212, 191, 0.18);
+      cursor: pointer;
+    }
+
+    .range-labels {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.82rem;
+    }
+
+    .duration-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+
+    .duration-btn,
+    .action-btn {
+      border: 1px solid transparent;
+      border-radius: 10px;
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease, background 0.16s ease;
+      cursor: pointer;
+    }
+
+    .duration-btn {
+      padding: 10px 0;
+      background: rgba(255, 255, 255, 0.03);
+      color: var(--text);
+    }
+
+    .duration-btn.active {
+      background: var(--accent-soft);
+      border-color: var(--accent-strong);
+      color: var(--accent);
+      box-shadow: 0 0 0 1px rgba(45, 212, 191, 0.12) inset;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .action-btn {
+      padding: 14px 16px;
+      background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.38));
+      color: #ecfffd;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+    }
+
+    .action-btn:not(.secondary):not(:disabled) {
+      animation: breathe 3s ease-in-out infinite;
+    }
+
+    .action-btn.playing {
+      animation: none;
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.22), rgba(239, 68, 68, 0.42));
+    }
+
+    .action-btn.secondary {
+      background: rgba(255, 255, 255, 0.04);
+      border-color: rgba(142, 169, 191, 0.16);
+    }
+
+    .action-btn:hover,
+    .duration-btn:hover {
+      transform: translateY(-1px);
+    }
+
+    .action-btn:disabled,
+    .duration-btn:disabled,
+    select:disabled,
+    input:disabled {
+      opacity: 0.55;
+      cursor: wait;
+      transform: none;
+    }
+
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-height: 24px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .duration-section {
+      transition: opacity 0.4s ease, max-height 0.4s ease;
+    }
+
+    .duration-section.dimmed {
+      opacity: 0.35;
+      pointer-events: none;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(45, 212, 191, 0.22);
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+      display: none;
+    }
+
+    .spinner.visible {
+      display: inline-block;
+    }
+
+    .meter-bar-wrap {
+      margin-top: 8px;
+      height: 3px;
+      border-radius: 2px;
+      background: rgba(45, 212, 191, 0.1);
+      overflow: hidden;
+    }
+
+    .meter-bar {
+      height: 100%;
+      width: 0%;
+      border-radius: 2px;
+      background: linear-gradient(90deg, var(--accent), rgba(45, 212, 191, 0.5));
+      transition: width 0.12s ease;
+    }
+
+    .status-sub {
+      margin-top: 4px;
+      color: rgba(142, 169, 191, 0.6);
+      font-size: 0.75rem;
+      min-height: 1em;
+    }
+
+    .footnote {
+      margin-top: 2px;
+      color: rgba(142, 169, 191, 0.72);
+      font-size: 0.76rem;
+      text-align: right;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes breathe {
+      0%, 100% { box-shadow: 0 0 12px rgba(45, 212, 191, 0.15); }
+      50% { box-shadow: 0 0 24px rgba(45, 212, 191, 0.35), 0 0 48px rgba(45, 212, 191, 0.12); }
+    }
+
+    @media (max-width: 520px) {
+      .shell {
+        padding: 22px;
+      }
+    }
+
+    .info-btn {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      color: var(--muted);
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: color 0.2s, border-color 0.2s;
+    }
+    .info-btn:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 10, 20, 0.85);
+      backdrop-filter: blur(8px);
+      display: none;
+      place-items: center;
+      z-index: 1000;
+      padding: 24px;
+    }
+    .modal-overlay.visible {
+      display: grid;
+    }
+    .modal {
+      width: min(100%, 460px);
+      max-height: 80vh;
+      overflow-y: auto;
+      padding: 32px;
+      border-radius: 20px;
+      border: 1px solid var(--panel-border);
+      background: var(--panel);
+      backdrop-filter: blur(22px);
+      box-shadow: var(--shadow);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    .modal h2 {
+      margin: 0 0 12px;
+      font-size: 1.3rem;
+      color: var(--accent);
+    }
+    .modal p {
+      margin: 0 0 14px;
+      font-size: 0.9rem;
+      color: var(--muted);
+    }
+    .modal p:last-child {
+      margin-bottom: 0;
+    }
+    .modal .author {
+      margin-top: 20px;
+      padding-top: 16px;
+      border-top: 1px solid var(--panel-border);
+      font-size: 0.85rem;
+      color: var(--text);
+    }
+    .modal-close {
+      float: right;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 0 4px;
+      line-height: 1;
+    }
+    .modal-close:hover {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <button class="info-btn" id="infoBtn" title="About Maresono">i</button>
+    <h1>MARESONO</h1>
+    <p class="subtitle">the sound of the sea</p>
+
+    <div class="orb-wrap">
+      <canvas id="waveCanvas" class="wave-canvas" width="300" height="180" aria-hidden="true"></canvas>
+    </div>
+
+    <section class="controls">
+      <div class="actions">
+        <button id="playBtn" class="action-btn">▶ PLAY</button>
+        <button id="exportBtn" class="action-btn secondary">↓ EXPORT</button>
+      </div>
+
+      <div class="field">
+        <label for="modelSelect">Model</label>
+        <select id="modelSelect"></select>
+      </div>
+
+      <div class="slider-pair">
+        <div class="field">
+          <div class="field-head">
+            <span>Intensity</span>
+            <span id="intensityValue">0.50</span>
+          </div>
+          <input id="intensitySlider" type="range" min="0" max="1" step="0.01" value="0.5" />
+          <div class="range-labels">
+            <span>calm</span>
+            <span>stormy</span>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-head">
+            <span>Volume</span>
+            <span id="volumeValue">75%</span>
+          </div>
+          <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.75" />
+          <div class="range-labels">
+            <span>quiet</span>
+            <span>full</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="field duration-section">
+        <div class="field-head">
+          <span>Duration</span>
+          <span id="durationValue">5m</span>
+        </div>
+        <div class="duration-grid" id="durationGrid">
+          <button class="duration-btn active" data-duration="300">5m</button>
+          <button class="duration-btn" data-duration="900">15m</button>
+          <button class="duration-btn" data-duration="1800">30m</button>
+          <button class="duration-btn" data-duration="3600">60m</button>
+          <button class="duration-btn" data-duration="7200">∞</button>
+        </div>
+        <div class="footnote">∞ exports a long-form 120m drift.</div>
+      </div>
+
+      <div class="status-row">
+        <span id="spinner" class="spinner"></span>
+        <span id="statusText">Ready.</span>
+      </div>
+      <div class="meter-bar-wrap">
+        <div id="meterBar" class="meter-bar"></div>
+      </div>
+      <div id="statusSub" class="status-sub">idle</div>
+    </section>
+  </main>
+
+  <div class="modal-overlay" id="infoModal">
+    <div class="modal">
+      <button class="modal-close" id="modalClose">&times;</button>
+      <h2>About Maresono</h2>
+      <p><strong>Maresono</strong> (mare + suono — sea + sound) is a generative ocean sound engine that learns from real ocean drum recordings and creates infinite, never-repeating soundscapes.</p>
+      <p><strong>How it works:</strong> Each model is built by analyzing the spectral fingerprint of a real handcrafted ocean drum. The engine extracts the frequency shape, amplitude dynamics, and timbral variation from the recording, then resynthesizes new audio by shaping noise through learned FIR filters — producing sound that is spectrally identical to the real instrument but infinitely generatable.</p>
+      <p><strong>Philosophy:</strong> Rather than simulating physics or looping samples, Maresono takes an analysis-resynthesis approach inspired by how our ears perceive the sea — layers of spectral texture, slow swells, and micro-variations that never quite repeat. The result is a meditative, always-evolving ocean that lives somewhere between the real and the imagined.</p>
+      <p><strong>Features:</strong> Multi-layer envelopes (slow swells modulating individual waves), three-way spectral crossfade (approaching waves are brighter, receding waves are thinner), perceptual corrections for natural warmth, and generative infinite playback with seamless crossfading between segments.</p>
+      <div class="author">Made by <strong>Matteo Bassi</strong></div>
+    </div>
+  </div>
+
+  <script>
+    const CROSSFADE_SECONDS = 0.5;
+    const PREFETCH_LEAD_SECONDS = 6.0;
+    const PLAY_FADE_SECONDS = 1.5;
+    const STOP_FADE_SECONDS = 1.0;
+    const VOLUME_RAMP_SECONDS = 0.1;
+
+    const modelSelect = document.getElementById('modelSelect');
+    const intensitySlider = document.getElementById('intensitySlider');
+    const intensityValue = document.getElementById('intensityValue');
+    const volumeSlider = document.getElementById('volumeSlider');
+    const volumeValue = document.getElementById('volumeValue');
+    const durationValue = document.getElementById('durationValue');
+    const durationButtons = [...document.querySelectorAll('.duration-btn')];
+    const durationSection = document.querySelector('.duration-section');
+    const playBtn = document.getElementById('playBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const statusText = document.getElementById('statusText');
+    const statusSub = document.getElementById('statusSub');
+    const spinner = document.getElementById('spinner');
+    const meterBar = document.getElementById('meterBar');
+    const waveCanvas = document.getElementById('waveCanvas');
+    const waveCtx = waveCanvas.getContext('2d');
+
+    let selectedDuration = 300;
+    let audioContext;
+    let analyser;
+    let analyserData;
+    let masterGain;
+    let animationFrame;
+    let isPlaying = false;
+    let playbackToken = 0;
+    let stopTimer = null;
+    let visualLevel = 0;
+    let wavePhase = 0;
+    let lastFrameTime = 0;
+    let precachedBuffer = null;
+    let precaching = false;
+    const activeChunks = new Set();
+
+    const friendlyName = (fileName) => fileName
+      .replace(/\.[^.]+$/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .replace(/\b\w/g, (char) => char.toUpperCase());
+
+    const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+    function holdAudioParam(param, time) {
+      if (typeof param.cancelAndHoldAtTime === 'function') {
+        param.cancelAndHoldAtTime(time);
+      } else {
+        param.cancelScheduledValues(time);
+        param.setValueAtTime(param.value, time);
+      }
+    }
+
+    function setBusy(busy, message) {
+      spinner.classList.toggle('visible', busy);
+      [playBtn, exportBtn, modelSelect, intensitySlider, volumeSlider, ...durationButtons].forEach((node) => {
+        node.disabled = busy;
+      });
+      if (message) {
+        statusText.textContent = message;
+      }
+    }
+
+    function setStatus(message) {
+      statusText.textContent = message;
+    }
+
+    function updateIntensity() {
+      intensityValue.textContent = Number(intensitySlider.value).toFixed(2);
+    }
+
+    function updateVolume(applyRamp = true) {
+      const value = Number(volumeSlider.value);
+      volumeValue.textContent = `${Math.round(value * 100)}%`;
+      if (applyRamp && audioContext && masterGain) {
+        const now = audioContext.currentTime;
+        holdAudioParam(masterGain.gain, now);
+        masterGain.gain.linearRampToValueAtTime(value, now + VOLUME_RAMP_SECONDS);
+      }
+    }
+
+    function activateDuration(button) {
+      durationButtons.forEach((item) => item.classList.toggle('active', item === button));
+      selectedDuration = Number(button.dataset.duration);
+      durationValue.textContent = button.textContent;
+    }
+
+    function resizeWaveCanvas() {
+      const rect = waveCanvas.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
+      if (waveCanvas.width !== width || waveCanvas.height !== height) {
+        waveCanvas.width = width;
+        waveCanvas.height = height;
+        waveCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+    }
+
+    function currentAudioLevel() {
+      if (!analyser || !analyserData || !isPlaying) {
+        visualLevel *= 0.965;
+        return visualLevel;
+      }
+
+      analyser.getByteTimeDomainData(analyserData);
+      let total = 0;
+      for (const value of analyserData) {
+        const centered = (value - 128) / 128;
+        total += centered * centered;
+      }
+      const rms = Math.sqrt(total / analyserData.length);
+      visualLevel = visualLevel * 0.82 + rms * 0.18;
+      return visualLevel;
+    }
+
+    function updateMeter(level) {
+      if (!isPlaying) {
+        meterBar.style.width = '0%';
+        return;
+      }
+
+      meterBar.style.width = `${Math.round(Math.max(0, Math.min(1, level)) * 100)}%`;
+    }
+
+    function drawWaveLayer(width, height, level, layer, time) {
+      const baseY = height * layer.baseY;
+      const amplitude = layer.idle + layer.boost * level;
+      const phase = time * layer.speed + layer.phaseOffset;
+
+      waveCtx.beginPath();
+      waveCtx.moveTo(0, height + 8);
+      for (let x = 0; x <= width; x += 6) {
+        const y = baseY
+          + Math.sin(x * layer.frequency + phase) * amplitude
+          + Math.sin(x * layer.frequency * 0.58 - phase * 0.8) * amplitude * 0.45;
+        waveCtx.lineTo(x, y);
+      }
+      waveCtx.lineTo(width, height + 8);
+      waveCtx.closePath();
+      waveCtx.fillStyle = `rgba(45, 212, 191, ${layer.opacity + level * layer.opacityBoost})`;
+      waveCtx.fill();
+      waveCtx.strokeStyle = `rgba(45, 212, 191, ${Math.min(0.58, layer.opacity + 0.12 + level * 0.16)})`;
+      waveCtx.lineWidth = 1.2;
+      waveCtx.stroke();
+    }
+
+    function animateWaves(timestamp = 0) {
+      resizeWaveCanvas();
+      const width = waveCanvas.clientWidth || 300;
+      const height = waveCanvas.clientHeight || 180;
+      const delta = lastFrameTime ? Math.min((timestamp - lastFrameTime) / 1000, 0.05) : 1 / 60;
+      lastFrameTime = timestamp;
+
+      const level = currentAudioLevel();
+      wavePhase += delta * (isPlaying ? 1.15 + level * 7.5 : 0.22);
+
+      waveCtx.clearRect(0, 0, width, height);
+      const background = waveCtx.createLinearGradient(0, 0, 0, height);
+      background.addColorStop(0, 'rgba(8, 19, 34, 0.12)');
+      background.addColorStop(1, 'rgba(4, 13, 24, 0.4)');
+      waveCtx.fillStyle = background;
+      waveCtx.fillRect(0, 0, width, height);
+
+      const layers = [
+        { baseY: 0.38, idle: 4, boost: 20, frequency: 0.018, speed: 0.9, opacity: 0.08, opacityBoost: 0.08, phaseOffset: 0.2 },
+        { baseY: 0.48, idle: 6, boost: 28, frequency: 0.024, speed: 1.2, opacity: 0.10, opacityBoost: 0.10, phaseOffset: 1.3 },
+        { baseY: 0.60, idle: 8, boost: 34, frequency: 0.03, speed: 1.45, opacity: 0.12, opacityBoost: 0.12, phaseOffset: 2.1 },
+        { baseY: 0.72, idle: 10, boost: 42, frequency: 0.037, speed: 1.75, opacity: 0.16, opacityBoost: 0.14, phaseOffset: 3.4 }
+      ];
+
+      for (const layer of layers) {
+        drawWaveLayer(width, height, level, layer, wavePhase);
+      }
+
+      updateMeter(level);
+      animationFrame = requestAnimationFrame(animateWaves);
+    }
+
+    async function ensureAudioGraph() {
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 2048;
+        analyser.smoothingTimeConstant = 0.88;
+        analyserData = new Uint8Array(analyser.fftSize);
+
+        masterGain = audioContext.createGain();
+        masterGain.gain.value = Number(volumeSlider.value);
+        masterGain.connect(analyser);
+        analyser.connect(audioContext.destination);
+      }
+      if (audioContext.state === 'suspended') {
+        await audioContext.resume();
+      }
+    }
+
+    function disconnectChunk(chunk) {
+      try {
+        chunk.source.disconnect();
+        chunk.gain.disconnect();
+      } catch (_) {}
+    }
+
+    function stopAllChunks() {
+      for (const chunk of activeChunks) {
+        try {
+          chunk.source.stop();
+        } catch (_) {}
+        disconnectChunk(chunk);
+      }
+      activeChunks.clear();
+    }
+
+    function hardStopPlayback() {
+      if (stopTimer) {
+        clearTimeout(stopTimer);
+        stopTimer = null;
+      }
+      stopAllChunks();
+      playBtn.textContent = '▶ PLAY';
+      playBtn.classList.remove('playing');
+      durationSection.classList.remove('dimmed');
+      meterBar.style.width = '0%';
+      statusSub.textContent = 'idle';
+    }
+
+    async function stopPlayback({ fade = true, status = 'Stopped.' } = {}) {
+      const wasActive = isPlaying || activeChunks.size > 0;
+      isPlaying = false;
+      playbackToken += 1;
+
+      if (!wasActive) {
+        hardStopPlayback();
+        if (status) setStatus(status);
+        return;
+      }
+
+      if (stopTimer) {
+        clearTimeout(stopTimer);
+        stopTimer = null;
+      }
+
+      if (fade && audioContext && masterGain) {
+        const now = audioContext.currentTime;
+        holdAudioParam(masterGain.gain, now);
+        masterGain.gain.linearRampToValueAtTime(0, now + STOP_FADE_SECONDS);
+        setStatus('Stopping...');
+        stopTimer = setTimeout(() => {
+          hardStopPlayback();
+          if (status) setStatus(status);
+        }, (STOP_FADE_SECONDS + 0.05) * 1000);
+      } else {
+        hardStopPlayback();
+        if (status) setStatus(status);
+      }
+    }
+
+    async function fetchAudio(url, payload) {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        let detail = `Request failed (${response.status})`;
+        try {
+          const data = await response.json();
+          detail = data.detail || detail;
+        } catch (_) {
+          const text = await response.text();
+          if (text) detail = text;
+        }
+        throw new Error(detail);
+      }
+
+      return response;
+    }
+
+    async function fetchChunk(shortDuration = null) {
+      const payload = {
+        model: modelSelect.value,
+        duration: selectedDuration,
+        intensity: Number(intensitySlider.value)
+      };
+      if (shortDuration) {
+        payload.preview_duration = shortDuration;
+      }
+      const response = await fetchAudio('/api/preview', payload);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      return await audioContext.decodeAudioData(arrayBuffer.slice(0));
+    }
+
+    function scheduleChunk(buffer, startTime, token) {
+      const source = audioContext.createBufferSource();
+      const gain = audioContext.createGain();
+      const fade = Math.min(CROSSFADE_SECONDS, Math.max(0.12, buffer.duration * 0.1));
+      const endTime = startTime + buffer.duration;
+      const sustainStart = Math.min(startTime + fade, endTime);
+      const sustainEnd = Math.max(sustainStart, endTime - fade);
+
+      source.buffer = buffer;
+      source.connect(gain);
+      gain.connect(masterGain);
+
+      gain.gain.setValueAtTime(0, startTime);
+      gain.gain.linearRampToValueAtTime(1, sustainStart);
+      gain.gain.setValueAtTime(1, sustainEnd);
+      gain.gain.linearRampToValueAtTime(0, endTime);
+
+      const chunk = { source, gain, token };
+      activeChunks.add(chunk);
+      source.onended = () => {
+        activeChunks.delete(chunk);
+        disconnectChunk(chunk);
+      };
+      source.start(startTime);
+      source.stop(endTime + 0.01);
+
+      return { endTime, fade };
+    }
+
+    async function streamChunks(initialBuffer, token) {
+      let buffer = initialBuffer;
+      let startTime = audioContext.currentTime + 0.05;
+
+      while (isPlaying && token === playbackToken) {
+        const scheduled = scheduleChunk(buffer, startTime, token);
+        const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime - scheduled.fade);
+        const waitMs = Math.max(0, (nextStart - audioContext.currentTime - PREFETCH_LEAD_SECONDS) * 1000);
+        if (waitMs > 0) {
+          await sleep(waitMs);
+        }
+
+        let nextBuffer = null;
+        while (isPlaying && token === playbackToken && !nextBuffer) {
+          try {
+            nextBuffer = await fetchChunk();
+          } catch (error) {
+            if (!isPlaying || token !== playbackToken) break;
+            setStatus(error.message || 'Generating next wave...');
+            await sleep(750);
+          }
+        }
+
+        if (!isPlaying || token !== playbackToken || !nextBuffer) {
+          break;
+        }
+
+        startTime = nextStart;
+        buffer = nextBuffer;
+      }
+    }
+
+    async function preview() {
+      if (isPlaying) {
+        await stopPlayback({ fade: true, status: 'Stopped.' });
+        return;
+      }
+
+      if (!modelSelect.value) {
+        setStatus('No model available.');
+        return;
+      }
+
+      setBusy(true, 'Generating first wave...');
+      await stopPlayback({ fade: false, status: 'Ready.' });
+
+      try {
+        await ensureAudioGraph();
+        // Use pre-cached buffer if available, otherwise fetch a short starter chunk
+        let decoded;
+        if (precachedBuffer) {
+          decoded = precachedBuffer;
+          precachedBuffer = null;
+        } else {
+          decoded = await fetchChunk(15);  // 15s chunk for fast start with buffer
+        }
+        const token = playbackToken + 1;
+        playbackToken = token;
+        isPlaying = true;
+
+        if (stopTimer) {
+          clearTimeout(stopTimer);
+          stopTimer = null;
+        }
+
+        const now = audioContext.currentTime;
+        holdAudioParam(masterGain.gain, now);
+        masterGain.gain.setValueAtTime(0, now);
+        masterGain.gain.linearRampToValueAtTime(Number(volumeSlider.value), now + PLAY_FADE_SECONDS);
+
+        playBtn.textContent = '■ STOP';
+        playBtn.classList.add('playing');
+        durationSection.classList.add('dimmed');
+        statusSub.textContent = 'playing...';
+        setStatus(`Playing ${friendlyName(modelSelect.value)} — always evolving...`);
+        setBusy(false);
+
+        streamChunks(decoded, token).catch(async (error) => {
+          if (token !== playbackToken) return;
+          await stopPlayback({ fade: false, status: error.message || 'Playback failed.' });
+        });
+      } catch (error) {
+        await stopPlayback({ fade: false, status: error.message || 'Playback failed.' });
+        setBusy(false);
+      }
+    }
+
+    function parseFilename(disposition) {
+      if (!disposition) return 'maresono.wav';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      return match ? match[1] : 'maresono.wav';
+    }
+
+    async function exportRender() {
+      if (!modelSelect.value) {
+        setStatus('No model available.');
+        return;
+      }
+
+      setBusy(true, 'Rendering export...');
+
+      try {
+        const response = await fetchAudio('/api/render', {
+          model: modelSelect.value,
+          duration: selectedDuration,
+          intensity: Number(intensitySlider.value)
+        });
+        const blob = await response.blob();
+        const fileName = parseFilename(response.headers.get('Content-Disposition'));
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(objectUrl);
+        setStatus(`Saved ${fileName}`);
+      } catch (error) {
+        setStatus(error.message || 'Export failed.');
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function loadModels() {
+      setBusy(true, 'Loading models...');
+      let loaded = false;
+
+      try {
+        const response = await fetch('/api/models');
+        const models = await response.json();
+        modelSelect.innerHTML = '';
+
+        if (!Array.isArray(models) || models.length === 0) {
+          const option = document.createElement('option');
+          option.value = '';
+          option.textContent = 'No reference WAV files found';
+          modelSelect.appendChild(option);
+          setStatus('No reference models found.');
+          return;
+        }
+
+        models.forEach((model) => {
+          const option = document.createElement('option');
+          option.value = model;
+          option.textContent = friendlyName(model);
+          modelSelect.appendChild(option);
+        });
+
+        loaded = true;
+        setStatus('Ready.');
+      } catch (error) {
+        modelSelect.innerHTML = '<option value="">Unable to load models</option>';
+        setStatus('Unable to load models.');
+      } finally {
+        setBusy(false);
+        const disabled = !loaded;
+        modelSelect.disabled = disabled;
+        playBtn.disabled = disabled;
+        exportBtn.disabled = disabled;
+      }
+    }
+
+    intensitySlider.addEventListener('input', updateIntensity);
+    volumeSlider.addEventListener('input', () => updateVolume(true));
+    durationButtons.forEach((button) => {
+      button.addEventListener('click', () => activateDuration(button));
+    });
+    playBtn.addEventListener('click', preview);
+    exportBtn.addEventListener('click', exportRender);
+    window.addEventListener('resize', resizeWaveCanvas);
+    window.addEventListener('beforeunload', () => {
+      hardStopPlayback();
+      if (animationFrame) cancelAnimationFrame(animationFrame);
+    });
+
+    updateIntensity();
+    updateVolume(false);
+    resizeWaveCanvas();
+    animateWaves();
+    loadModels().then(() => {
+      // Pre-cache a short starter chunk once models are loaded
+      if (modelSelect.value) {
+        precaching = true;
+        ensureAudioGraph().then(() => fetchChunk(15)).then((buf) => {
+          precachedBuffer = buf;
+          precaching = false;
+        }).catch(() => { precaching = false; });
+      }
+    });
+
+    // Info modal
+    const infoModal = document.getElementById('infoModal');
+    document.getElementById('infoBtn').addEventListener('click', () => {
+      infoModal.classList.add('visible');
+    });
+    document.getElementById('modalClose').addEventListener('click', () => {
+      infoModal.classList.remove('visible');
+    });
+    infoModal.addEventListener('click', (e) => {
+      if (e.target === infoModal) infoModal.classList.remove('visible');
+    });
+  </script>
+</body>
+</html>
