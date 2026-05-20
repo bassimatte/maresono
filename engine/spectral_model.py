@@ -279,6 +279,9 @@ class SpectralSynthesizer:
             # Add rumble layer (works in fast mode too)
             rumble = self._generate_rumble_layer(n_samples, sr, amp_envelope, intensity)
             audio = audio + rumble
+            # Add bubble transients (foam crackle)
+            bubbles = self._generate_bubble_transients(n_samples, sr, amp_envelope, intensity)
+            audio = audio + bubbles
         else:
             # Full quality: three-way spectral crossfade
             quiet_stream = fftconvolve(noise, quiet_fir, mode='same')
@@ -316,6 +319,10 @@ class SpectralSynthesizer:
             # Add rumble layer
             rumble = self._generate_rumble_layer(n_samples, sr, amp_envelope, intensity)
             audio = audio + rumble
+
+            # Add bubble transients (foam crackle)
+            bubbles = self._generate_bubble_transients(n_samples, sr, amp_envelope, intensity)
+            audio = audio + bubbles
 
             # Micro-texture (skip in fast mode)
             grain = self._generate_micro_texture(n_samples, sr)
@@ -454,6 +461,97 @@ class SpectralSynthesizer:
         rumble = rumble / (np.max(np.abs(rumble)) + 1e-10) * rumble_gain
 
         return rumble
+
+    def _generate_bubble_transients(self, n_samples: int, sr: int,
+                                     amp_envelope: np.ndarray,
+                                     intensity: float = 0.5) -> np.ndarray:
+        """
+        Sparse bubble transients based on Minnaert resonance physics.
+        
+        Breaking waves entrain air bubbles that ring as damped harmonic
+        oscillators. Frequency is determined by bubble radius:
+            f = 3.26 / radius  (Hz·m at standard conditions)
+        
+        Bubble radii in surf: 0.5mm–10mm → frequencies 326 Hz–6.5 kHz.
+        Each bubble = damped sinusoid. Density follows the amplitude envelope
+        (more bubbles during wave crashes, fewer during calm).
+        """
+        rng = np.random.default_rng()
+        output = np.zeros(n_samples)
+
+        # Bubble event density (events per second) scales with intensity
+        # Calm: sparse crackle; stormy: dense foam fizz
+        base_density = np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 15.0, 60.0])
+
+        # Downsample envelope to control rate for scheduling efficiency
+        ctrl_rate = 20  # Hz
+        n_ctrl = max(1, int(n_samples / sr * ctrl_rate))
+        ctrl_indices = np.linspace(0, n_samples - 1, n_ctrl).astype(int)
+        ctrl_env = amp_envelope[ctrl_indices]
+        # Normalize to [0, 1]
+        ctrl_env = ctrl_env / (np.max(ctrl_env) + 1e-10)
+
+        # Schedule bubble events — probability proportional to envelope²
+        # (bubbles happen during breaking, not during silence)
+        ctrl_duration = n_samples / sr / n_ctrl  # seconds per control point
+        
+        for i in range(n_ctrl):
+            # Local density modulated by envelope (squared for emphasis on peaks)
+            local_density = base_density * (ctrl_env[i] ** 2)
+            n_events = rng.poisson(local_density * ctrl_duration)
+            
+            if n_events == 0:
+                continue
+
+            # Time window for this control segment
+            t_start_sample = ctrl_indices[i]
+            t_end_sample = ctrl_indices[min(i + 1, n_ctrl - 1)] if i < n_ctrl - 1 else n_samples
+
+            for _ in range(n_events):
+                # Random bubble radius: log-uniform between 0.5mm and 10mm
+                # Smaller bubbles more likely (power-law distribution)
+                radius = 10 ** rng.uniform(-3.3, -2.0)  # 0.5mm to 10mm
+                
+                # Minnaert frequency
+                freq = 3.26 / radius  # Hz
+                if freq > sr / 2 - 100:  # respect Nyquist
+                    continue
+
+                # Damping: smaller bubbles damp faster
+                # Typical damping ratio 0.05–0.25
+                damping = rng.uniform(0.08, 0.22)
+                
+                # Duration of the transient (until amplitude < -40dB)
+                # e^(-ζωt) = 0.01 → t = ln(100) / (ζω)
+                omega = 2 * np.pi * freq
+                bubble_duration = min(4.6 / (damping * omega), 0.15)  # cap at 150ms
+                bubble_samples = min(int(bubble_duration * sr), n_samples // 4)
+                
+                if bubble_samples < 4:
+                    continue
+
+                # Random onset within this control segment
+                onset = rng.integers(t_start_sample, max(t_start_sample + 1, t_end_sample))
+                if onset + bubble_samples > n_samples:
+                    bubble_samples = n_samples - onset
+
+                # Synthesize damped sinusoid
+                t = np.arange(bubble_samples) / sr
+                bubble = np.exp(-damping * omega * t) * np.sin(omega * t)
+                
+                # Random amplitude (smaller bubbles tend to be quieter)
+                amp = rng.uniform(0.3, 1.0) * (radius / 0.01) ** 0.3
+                
+                output[onset:onset + bubble_samples] += bubble * amp
+
+        # Normalize and scale
+        peak = np.max(np.abs(output))
+        if peak > 0:
+            # Bubble layer gain: subtle at calm, more present at stormy
+            bubble_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.02, 0.06, 0.12])
+            output = output / peak * bubble_gain
+
+        return output
 
     def _build_fir(self, spectrum: np.ndarray, sr: int, order: int) -> np.ndarray:
         """Build a linear-phase FIR filter from a learned magnitude spectrum."""
