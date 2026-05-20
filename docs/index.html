@@ -749,6 +749,11 @@
     const STOP_FADE_SECONDS = 1.0;
     const VOLUME_RAMP_SECONDS = 0.1;
 
+    // Auto-detect backend: use Render.com when on GitHub Pages, otherwise same-origin
+    const API_BASE = window.location.hostname.includes('github.io')
+      ? 'https://maresono.onrender.com'
+      : '';
+
     const modelSelect = document.getElementById('modelSelect');
     const modelGrid = document.getElementById('modelGrid');
     const intensitySlider = document.getElementById('intensitySlider');
@@ -1065,7 +1070,7 @@
         intensity: Number(intensitySlider.value),
         preview_duration: shortDuration || STREAM_CHUNK_SECONDS
       };
-      const response = await fetchAudio('/api/preview', payload);
+      const response = await fetchAudio(`${API_BASE}/api/preview`, payload);
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
       return await audioContext.decodeAudioData(arrayBuffer.slice(0));
@@ -1259,7 +1264,7 @@
       durationButtons.forEach(b => b.disabled = true);
 
       try {
-        const response = await fetchAudio('/api/render', {
+        const response = await fetchAudio(`${API_BASE}/api/render`, {
           model: modelSelect.value,
           duration: selectedDuration,
           intensity: Number(intensitySlider.value)
@@ -1321,7 +1326,7 @@
       let loaded = false;
 
       try {
-        const response = await fetch('/api/models');
+        const response = await fetch(`${API_BASE}/api/models`);
         const models = await response.json();
         modelSelect.innerHTML = '';
         modelGrid.innerHTML = '';
