@@ -71,13 +71,13 @@
     .orb-wrap {
       display: grid;
       place-items: center;
-      margin: -28px -28px 20px -28px;
+      margin: -28px -28px 24px -28px;
     }
 
     .wave-canvas {
       width: 100% !important;
       height: auto;
-      aspect-ratio: 16 / 7;
+      aspect-ratio: 16 / 9;
       border-radius: 22px 22px 0 0;
       background:
         radial-gradient(circle at top, rgba(45, 212, 191, 0.12), transparent 52%),
@@ -89,6 +89,117 @@
     .controls {
       display: grid;
       gap: 18px;
+    }
+
+    /* Model cards */
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 8px;
+    }
+
+    .model-card {
+      padding: 10px 6px;
+      border: 1px solid rgba(142, 169, 191, 0.12);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      line-height: 1.2;
+    }
+
+    .model-card:hover {
+      background: rgba(45, 212, 191, 0.06);
+      border-color: rgba(45, 212, 191, 0.2);
+      color: var(--text);
+    }
+
+    .model-card.active {
+      background: var(--accent-soft);
+      border-color: var(--accent-strong);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .model-card .model-icon {
+      display: block;
+      font-size: 1.2rem;
+      margin-bottom: 4px;
+    }
+
+    /* Intensity arc */
+    .intensity-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .arc-container {
+      position: relative;
+      width: 140px;
+      height: 90px;
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    .arc-container svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .arc-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .arc-value {
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.82rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .arc-ends {
+      display: flex;
+      justify-content: space-between;
+      width: 140px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      opacity: 0.7;
+      margin-top: -2px;
+    }
+
+    /* Volume slider (kept simple) */
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .volume-row label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      min-width: 48px;
+    }
+
+    .volume-row input[type="range"] {
+      flex: 1;
+    }
+
+    .volume-row .vol-val {
+      font-size: 0.78rem;
+      color: var(--muted);
+      min-width: 32px;
+      text-align: right;
     }
 
     .slider-pair {
@@ -178,21 +289,23 @@
     }
 
     .actions {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
+      display: flex;
+      justify-content: center;
       gap: 12px;
     }
 
     .action-btn {
-      padding: 14px 16px;
+      padding: 14px 32px;
       background: linear-gradient(135deg, rgba(45, 212, 191, 0.18), rgba(45, 212, 191, 0.38));
       color: #ecfffd;
       font-weight: 600;
       letter-spacing: 0.04em;
+      min-width: 160px;
     }
 
     .action-btn:not(.secondary):not(:disabled) {
       animation: breathe 3s ease-in-out infinite;
+      font-size: 1.05rem;
     }
 
     .action-btn.playing {
@@ -203,6 +316,15 @@
     .action-btn.secondary {
       background: rgba(255, 255, 255, 0.04);
       border-color: rgba(142, 169, 191, 0.16);
+      font-size: 0.88rem;
+      padding: 12px 24px;
+      min-width: 140px;
+    }
+    .action-btn.cancellable {
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #ef4444;
+      opacity: 1 !important;
+      cursor: pointer !important;
     }
 
     .action-btn:hover,
@@ -226,6 +348,72 @@
       min-height: 24px;
       color: var(--muted);
       font-size: 0.9rem;
+    }
+
+    .generating-overlay {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 12px;
+      color: var(--accent);
+      font-size: 0.92rem;
+      font-weight: 400;
+      letter-spacing: 0.02em;
+      animation: pulse-opacity 1.8s ease-in-out infinite;
+    }
+
+    @keyframes pulse-opacity {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid rgba(255,255,255,0.06);
+      margin: 20px 0 12px;
+    }
+
+    .export-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.78rem;
+      cursor: pointer;
+      padding: 4px 12px;
+      margin: 0 auto;
+      opacity: 0.7;
+      transition: opacity 0.2s;
+    }
+
+    .export-toggle:hover {
+      opacity: 1;
+      color: var(--accent);
+    }
+
+    .export-toggle .chevron {
+      transition: transform 0.3s ease;
+      font-size: 0.6rem;
+    }
+
+    .export-toggle.open .chevron {
+      transform: rotate(180deg);
+    }
+
+    .export-section {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.35s ease, opacity 0.35s ease;
+      opacity: 0;
+    }
+
+    .export-section.open {
+      max-height: 200px;
+      opacity: 1;
     }
 
     .duration-section {
@@ -289,6 +477,82 @@
       0%, 100% { box-shadow: 0 0 12px rgba(45, 212, 191, 0.15); }
       50% { box-shadow: 0 0 24px rgba(45, 212, 191, 0.35), 0 0 48px rgba(45, 212, 191, 0.12); }
     }
+
+    /* 1. Animated background gradient */
+    body {
+      transition: background 2s ease;
+    }
+    body.intensity-low {
+      background:
+        radial-gradient(circle at top, rgba(45, 140, 191, 0.12), transparent 34%),
+        linear-gradient(180deg, #0d1b31 0%, var(--bg) 100%);
+    }
+    body.intensity-mid {
+      background:
+        radial-gradient(circle at top, rgba(45, 212, 191, 0.16), transparent 38%),
+        linear-gradient(180deg, #0d2031 0%, var(--bg) 100%);
+    }
+    body.intensity-high {
+      background:
+        radial-gradient(circle at top, rgba(45, 191, 160, 0.22), transparent 42%),
+        linear-gradient(180deg, #0d2528 0%, #081420 100%);
+    }
+
+    /* 2. Orb play button */
+    .orb-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 2px solid rgba(45, 212, 191, 0.3);
+      background: radial-gradient(circle at 35% 35%, rgba(45, 212, 191, 0.22), rgba(10, 22, 40, 0.9));
+      color: var(--accent);
+      font-size: 1.6rem;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.3s ease;
+      box-shadow: 0 0 20px rgba(45, 212, 191, 0.1), inset 0 0 12px rgba(45, 212, 191, 0.05);
+      position: relative;
+      margin: 0 auto;
+    }
+    .orb-btn:hover {
+      border-color: rgba(45, 212, 191, 0.6);
+      box-shadow: 0 0 32px rgba(45, 212, 191, 0.25), inset 0 0 16px rgba(45, 212, 191, 0.1);
+      transform: scale(1.04);
+    }
+    .orb-btn.playing {
+      border-color: rgba(45, 212, 191, 0.7);
+      animation: orb-pulse 2.5s ease-in-out infinite;
+      background: radial-gradient(circle at 35% 35%, rgba(45, 212, 191, 0.35), rgba(10, 22, 40, 0.85));
+    }
+    .orb-btn.dirty {
+      border-color: rgba(255, 200, 50, 0.5);
+      background: radial-gradient(circle at 35% 35%, rgba(255, 200, 50, 0.15), rgba(10, 22, 40, 0.9));
+      color: rgba(255, 220, 100, 0.9);
+    }
+    .orb-btn:disabled {
+      opacity: 0.5;
+      cursor: wait;
+      transform: none;
+      animation: none;
+    }
+    @keyframes orb-pulse {
+      0%, 100% { box-shadow: 0 0 20px rgba(45, 212, 191, 0.2), inset 0 0 12px rgba(45, 212, 191, 0.08); }
+      50% { box-shadow: 0 0 40px rgba(45, 212, 191, 0.45), inset 0 0 20px rgba(45, 212, 191, 0.15); border-color: rgba(45, 212, 191, 0.9); }
+    }
+
+    /* 3. Model card descriptions */
+    .model-card .model-desc {
+      display: block;
+      font-size: 0.62rem;
+      color: rgba(142, 169, 191, 0.6);
+      margin-top: 2px;
+      font-weight: 300;
+    }
+    .model-card.active .model-desc {
+      color: rgba(45, 212, 191, 0.7);
+    }
+
 
     @media (max-width: 520px) {
       .shell {
@@ -390,55 +654,42 @@
     </div>
 
     <section class="controls">
-      <div class="actions">
-        <button id="playBtn" class="action-btn">▶ PLAY</button>
-        <button id="exportBtn" class="action-btn secondary">↓ EXPORT</button>
+      <button id="playBtn" class="orb-btn" title="Play / Stop (Space)">▶</button>
+
+      <div id="generatingOverlay" class="generating-overlay" style="display:none;">
+        <span class="spinner active"></span> Generating first wave...
       </div>
 
+      <!-- Model cards -->
       <div class="field">
-        <label for="modelSelect">Model</label>
-        <select id="modelSelect"></select>
+        <label>Model</label>
+        <div class="model-grid" id="modelGrid"></div>
+        <select id="modelSelect" style="display:none;"></select>
       </div>
 
+      <!-- Intensity arc + Volume -->
       <div class="slider-pair">
-        <div class="field">
-          <div class="field-head">
-            <span>Intensity</span>
-            <span id="intensityValue">0.50</span>
+        <div class="intensity-wrap">
+          <span class="arc-label">Intensity</span>
+          <div class="arc-container" id="arcContainer">
+            <svg viewBox="0 0 140 90">
+              <path id="arcBg" d="" fill="none" stroke="rgba(45,212,191,0.15)" stroke-width="8" stroke-linecap="round"/>
+              <path id="arcFg" d="" fill="none" stroke="rgba(45,212,191,0.8)" stroke-width="8" stroke-linecap="round"/>
+              <circle id="arcThumb" cx="0" cy="0" r="7" fill="#d9fffb" stroke="rgba(45,212,191,0.6)" stroke-width="2" style="cursor:pointer;"/>
+            </svg>
+            <span class="arc-value" id="intensityValue">0.25</span>
           </div>
-          <input id="intensitySlider" type="range" min="0" max="1" step="0.01" value="0.5" />
-          <div class="range-labels">
-            <span>calm</span>
-            <span>stormy</span>
-          </div>
+          <div class="arc-ends"><span>calm</span><span>stormy</span></div>
+          <input id="intensitySlider" type="hidden" value="0.25" />
         </div>
 
-        <div class="field">
-          <div class="field-head">
-            <span>Volume</span>
-            <span id="volumeValue">75%</span>
-          </div>
-          <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.75" />
-          <div class="range-labels">
-            <span>quiet</span>
-            <span>full</span>
+        <div class="field" style="display:flex;flex-direction:column;justify-content:center;">
+          <div class="volume-row">
+            <label>Volume</label>
+            <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.5" />
+            <span class="vol-val" id="volumeValue">75%</span>
           </div>
         </div>
-      </div>
-
-      <div class="field duration-section">
-        <div class="field-head">
-          <span>Duration</span>
-          <span id="durationValue">5m</span>
-        </div>
-        <div class="duration-grid" id="durationGrid">
-          <button class="duration-btn active" data-duration="300">5m</button>
-          <button class="duration-btn" data-duration="900">15m</button>
-          <button class="duration-btn" data-duration="1800">30m</button>
-          <button class="duration-btn" data-duration="3600">60m</button>
-          <button class="duration-btn" data-duration="7200">∞</button>
-        </div>
-        <div class="footnote">∞ exports a long-form 120m drift.</div>
       </div>
 
       <div class="status-row">
@@ -449,8 +700,36 @@
         <div id="meterBar" class="meter-bar"></div>
       </div>
       <div id="statusSub" class="status-sub">idle</div>
+
+      <hr class="divider" />
+
+      <button class="export-toggle" id="exportToggle">
+        <span>Export</span>
+        <span class="chevron">▼</span>
+      </button>
+
+      <div class="export-section" id="exportSection">
+        <div class="field duration-section">
+          <div class="field-head">
+            <span>Duration</span>
+            <span id="durationValue">5m</span>
+          </div>
+          <div class="duration-grid" id="durationGrid">
+            <button class="duration-btn active" data-duration="300">5m</button>
+            <button class="duration-btn" data-duration="900">15m</button>
+            <button class="duration-btn" data-duration="1800">30m</button>
+            <button class="duration-btn" data-duration="3600">60m</button>
+            <button class="duration-btn" data-duration="7200">∞</button>
+          </div>
+          <div class="footnote">∞ exports a long-form 120m drift.</div>
+        </div>
+        <div class="actions" style="margin-top:10px;">
+          <button id="exportBtn" class="action-btn secondary">↓ EXPORT WAV</button>
+        </div>
+      </div>
     </section>
   </main>
+
 
   <div class="modal-overlay" id="infoModal">
     <div class="modal">
@@ -465,19 +744,19 @@
   </div>
 
   <script>
-    // API configuration — points to Render.com backend
-    const MARESONO_API_BASE = window.MARESONO_API_BASE || 'https://maresono.onrender.com';
-    function apiUrl(path) { return `${MARESONO_API_BASE}${path}`; }
-
-    const CROSSFADE_SECONDS = 0.5;
-    const PREFETCH_LEAD_SECONDS = 6.0;
+    const CROSSFADE_SECONDS = 0.8;
     const PLAY_FADE_SECONDS = 1.5;
     const STOP_FADE_SECONDS = 1.0;
     const VOLUME_RAMP_SECONDS = 0.1;
 
     const modelSelect = document.getElementById('modelSelect');
+    const modelGrid = document.getElementById('modelGrid');
     const intensitySlider = document.getElementById('intensitySlider');
     const intensityValue = document.getElementById('intensityValue');
+    const arcContainer = document.getElementById('arcContainer');
+    const arcBg = document.getElementById('arcBg');
+    const arcFg = document.getElementById('arcFg');
+    const arcThumb = document.getElementById('arcThumb');
     const volumeSlider = document.getElementById('volumeSlider');
     const volumeValue = document.getElementById('volumeValue');
     const durationValue = document.getElementById('durationValue');
@@ -485,12 +764,23 @@
     const durationSection = document.querySelector('.duration-section');
     const playBtn = document.getElementById('playBtn');
     const exportBtn = document.getElementById('exportBtn');
+    const exportToggle = document.getElementById('exportToggle');
+    const exportSection = document.getElementById('exportSection');
+    const generatingOverlay = document.getElementById('generatingOverlay');
     const statusText = document.getElementById('statusText');
     const statusSub = document.getElementById('statusSub');
     const spinner = document.getElementById('spinner');
     const meterBar = document.getElementById('meterBar');
     const waveCanvas = document.getElementById('waveCanvas');
     const waveCtx = waveCanvas.getContext('2d');
+
+    // 3. Model descriptions
+    const modelDescriptions = {
+      'calma': 'gentle shore lapping',
+      'tempesta': 'powerful storm surf',
+      'profondo': 'deep ocean rumble',
+      'onda lunga': 'long rolling swells',
+    };
 
     let selectedDuration = 300;
     let audioContext;
@@ -506,6 +796,7 @@
     let lastFrameTime = 0;
     let precachedBuffer = null;
     let precaching = false;
+    let paramChanged = false;
     const activeChunks = new Set();
 
     const friendlyName = (fileName) => fileName
@@ -528,9 +819,13 @@
 
     function setBusy(busy, message) {
       spinner.classList.toggle('visible', busy);
-      [playBtn, exportBtn, modelSelect, intensitySlider, volumeSlider, ...durationButtons].forEach((node) => {
+      [playBtn, exportBtn, volumeSlider, ...durationButtons].forEach((node) => {
         node.disabled = busy;
       });
+      arcContainer.style.pointerEvents = busy ? 'none' : '';
+      arcContainer.style.opacity = busy ? '0.5' : '';
+      modelGrid.style.pointerEvents = busy ? 'none' : '';
+      modelGrid.style.opacity = busy ? '0.5' : '';
       if (message) {
         statusText.textContent = message;
       }
@@ -603,6 +898,13 @@
       const amplitude = layer.idle + layer.boost * level;
       const phase = time * layer.speed + layer.phaseOffset;
 
+      // 7. Responsive waveform color — shifts with intensity
+      const intensity = Number(intensitySlider.value);
+      // Calm: deep blue (100,160,220) → Mid: teal (45,212,191) → Stormy: cyan-white (140,240,220)
+      const r = Math.round(100 + (45 - 100) * Math.min(intensity * 2, 1) + (140 - 45) * Math.max(intensity * 2 - 1, 0));
+      const g = Math.round(160 + (212 - 160) * Math.min(intensity * 2, 1) + (240 - 212) * Math.max(intensity * 2 - 1, 0));
+      const b = Math.round(220 + (191 - 220) * Math.min(intensity * 2, 1) + (220 - 191) * Math.max(intensity * 2 - 1, 0));
+
       waveCtx.beginPath();
       waveCtx.moveTo(0, height + 8);
       for (let x = 0; x <= width; x += 6) {
@@ -613,9 +915,9 @@
       }
       waveCtx.lineTo(width, height + 8);
       waveCtx.closePath();
-      waveCtx.fillStyle = `rgba(45, 212, 191, ${layer.opacity + level * layer.opacityBoost})`;
+      waveCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${layer.opacity + level * layer.opacityBoost})`;
       waveCtx.fill();
-      waveCtx.strokeStyle = `rgba(45, 212, 191, ${Math.min(0.58, layer.opacity + 0.12 + level * 0.16)})`;
+      waveCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.58, layer.opacity + 0.12 + level * 0.16)})`;
       waveCtx.lineWidth = 1.2;
       waveCtx.stroke();
     }
@@ -693,8 +995,8 @@
         stopTimer = null;
       }
       stopAllChunks();
-      playBtn.textContent = '▶ PLAY';
-      playBtn.classList.remove('playing');
+      playBtn.textContent = '▶';
+      playBtn.classList.remove('playing', 'dirty');
       durationSection.classList.remove('dimmed');
       meterBar.style.width = '0%';
       statusSub.textContent = 'idle';
@@ -731,11 +1033,12 @@
       }
     }
 
-    async function fetchAudio(url, payload) {
-      const response = await fetch(apiUrl(url), {
+    async function fetchAudio(url, payload, signal) {
+      const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: signal || undefined
       });
 
       if (!response.ok) {
@@ -753,15 +1056,15 @@
       return response;
     }
 
+    const STREAM_CHUNK_SECONDS = 25; // chunk length for continuous playback
+
     async function fetchChunk(shortDuration = null) {
       const payload = {
         model: modelSelect.value,
         duration: selectedDuration,
-        intensity: Number(intensitySlider.value)
+        intensity: Number(intensitySlider.value),
+        preview_duration: shortDuration || STREAM_CHUNK_SECONDS
       };
-      if (shortDuration) {
-        payload.preview_duration = shortDuration;
-      }
       const response = await fetchAudio('/api/preview', payload);
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
@@ -800,39 +1103,69 @@
     async function streamChunks(initialBuffer, token) {
       let buffer = initialBuffer;
       let startTime = audioContext.currentTime + 0.05;
+      // Immediately start fetching the NEXT chunk (eager pre-fetch)
+      let nextBufferPromise = fetchChunk();
 
       while (isPlaying && token === playbackToken) {
         const scheduled = scheduleChunk(buffer, startTime, token);
         const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime - scheduled.fade);
-        const waitMs = Math.max(0, (nextStart - audioContext.currentTime - PREFETCH_LEAD_SECONDS) * 1000);
-        if (waitMs > 0) {
-          await sleep(waitMs);
-        }
 
+        // Start fetching chunk after next (always stay 1 chunk ahead)
+        const afterNextPromise = fetchChunk();
+
+        // Wait for the already-fetching next chunk
         let nextBuffer = null;
-        while (isPlaying && token === playbackToken && !nextBuffer) {
+        try {
+          nextBuffer = await nextBufferPromise;
+        } catch (error) {
+          if (!isPlaying || token !== playbackToken) break;
+          // Retry once
           try {
             nextBuffer = await fetchChunk();
-          } catch (error) {
+          } catch (e2) {
             if (!isPlaying || token !== playbackToken) break;
-            setStatus(error.message || 'Generating next wave...');
-            await sleep(750);
+            setStatus(e2.message || 'Generating next wave...');
+            await sleep(500);
+            nextBuffer = await fetchChunk();
           }
         }
 
-        if (!isPlaying || token !== playbackToken || !nextBuffer) {
-          break;
+        if (!isPlaying || token !== playbackToken || !nextBuffer) break;
+
+        // Wait until it's almost time to play the next chunk
+        const now = audioContext.currentTime;
+        const waitUntil = nextStart - 0.1;
+        if (waitUntil > now) {
+          const waitMs = (waitUntil - now) * 1000;
+          const step = 200;
+          let waited = 0;
+          while (waited < waitMs && isPlaying && token === playbackToken) {
+            await sleep(Math.min(step, waitMs - waited));
+            waited += step;
+          }
         }
+
+        if (!isPlaying || token !== playbackToken) break;
 
         startTime = nextStart;
         buffer = nextBuffer;
+        nextBufferPromise = afterNextPromise; // Use the pre-fetched promise
       }
     }
 
     async function preview() {
       if (isPlaying) {
-        await stopPlayback({ fade: true, status: 'Stopped.' });
-        return;
+        // If params changed, restart with new settings (APPLY behavior)
+        const modelChanged = modelSelect.value !== appliedModel;
+        const intensityChanged = Math.abs(Number(intensitySlider.value) - appliedIntensity) > 0.005;
+        if (modelChanged || intensityChanged) {
+          await stopPlayback({ fade: false, status: '' });
+          // Fall through to start playing with new settings
+        } else {
+          await stopPlayback({ fade: true, status: 'Stopped.' });
+          generatingOverlay.style.display = 'none';
+          return;
+        }
       }
 
       if (!modelSelect.value) {
@@ -840,6 +1173,7 @@
         return;
       }
 
+      generatingOverlay.style.display = 'flex';
       setBusy(true, 'Generating first wave...');
       await stopPlayback({ fade: false, status: 'Ready.' });
 
@@ -856,6 +1190,8 @@
         const token = playbackToken + 1;
         playbackToken = token;
         isPlaying = true;
+        appliedModel = modelSelect.value;
+        appliedIntensity = Number(intensitySlider.value);
 
         if (stopTimer) {
           clearTimeout(stopTimer);
@@ -867,12 +1203,14 @@
         masterGain.gain.setValueAtTime(0, now);
         masterGain.gain.linearRampToValueAtTime(Number(volumeSlider.value), now + PLAY_FADE_SECONDS);
 
-        playBtn.textContent = '■ STOP';
+        playBtn.textContent = '■';
         playBtn.classList.add('playing');
+        playBtn.classList.remove('dirty');
         durationSection.classList.add('dimmed');
         statusSub.textContent = 'playing...';
         setStatus(`Playing ${friendlyName(modelSelect.value)} — always evolving...`);
         setBusy(false);
+        generatingOverlay.style.display = 'none';
 
         streamChunks(decoded, token).catch(async (error) => {
           if (token !== playbackToken) return;
@@ -881,6 +1219,7 @@
       } catch (error) {
         await stopPlayback({ fade: false, status: error.message || 'Playback failed.' });
         setBusy(false);
+        generatingOverlay.style.display = 'none';
       }
     }
 
@@ -890,20 +1229,41 @@
       return match ? match[1] : 'maresono.wav';
     }
 
+    let exportAbortController = null;
+
     async function exportRender() {
       if (!modelSelect.value) {
         setStatus('No model available.');
         return;
       }
 
-      setBusy(true, 'Rendering export...');
+      // If already exporting, cancel it
+      if (exportAbortController) {
+        exportAbortController.abort();
+        exportAbortController = null;
+        exportBtn.textContent = '↓ EXPORT WAV';
+        exportBtn.classList.remove('cancellable');
+        setStatus('Export cancelled.');
+        return;
+      }
+
+      // Estimate render time and warn
+      const durMin = selectedDuration / 60;
+      const estSec = Math.round(selectedDuration * 0.14); // ~0.14s per second of audio at full quality
+      setStatus(`Rendering ${durMin}m export (~${estSec}s)... click cancel to abort`);
+
+      exportAbortController = new AbortController();
+      exportBtn.textContent = '✕ CANCEL';
+      exportBtn.classList.add('cancellable');
+      // Only disable duration buttons during export, keep playback working
+      durationButtons.forEach(b => b.disabled = true);
 
       try {
         const response = await fetchAudio('/api/render', {
           model: modelSelect.value,
           duration: selectedDuration,
           intensity: Number(intensitySlider.value)
-        });
+        }, exportAbortController.signal);
         const blob = await response.blob();
         const fileName = parseFilename(response.headers.get('Content-Disposition'));
         const objectUrl = URL.createObjectURL(blob);
@@ -916,10 +1276,44 @@
         URL.revokeObjectURL(objectUrl);
         setStatus(`Saved ${fileName}`);
       } catch (error) {
-        setStatus(error.message || 'Export failed.');
+        if (error.name === 'AbortError') {
+          setStatus('Export cancelled.');
+        } else {
+          setStatus(error.message || 'Export failed.');
+        }
       } finally {
-        setBusy(false);
+        exportAbortController = null;
+        exportBtn.textContent = '↓ EXPORT WAV';
+        exportBtn.classList.remove('cancellable');
+        durationButtons.forEach(b => b.disabled = false);
       }
+    }
+
+    // Wave icons for model cards
+    const modelIcons = {
+      'calma': '🌊',
+      'tempesta': '⚡',
+      'profondo': '🏔️',
+      'onda lunga': '🌀',
+    };
+    const defaultIcon = '🐚';
+
+    function getModelIcon(name) {
+      const key = friendlyName(name).toLowerCase();
+      return modelIcons[key] || defaultIcon;
+    }
+
+    function getModelDesc(name) {
+      const key = friendlyName(name).toLowerCase();
+      return modelDescriptions[key] || '';
+    }
+
+    function selectModelCard(modelValue) {
+      modelSelect.value = modelValue;
+      document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
+      const card = document.querySelector(`.model-card[data-model="${modelValue}"]`);
+      if (card) card.classList.add('active');
+      markParamsDirty();
     }
 
     async function loadModels() {
@@ -927,41 +1321,156 @@
       let loaded = false;
 
       try {
-        const response = await fetch(apiUrl('/api/models'));
+        const response = await fetch('/api/models');
         const models = await response.json();
         modelSelect.innerHTML = '';
+        modelGrid.innerHTML = '';
 
         if (!Array.isArray(models) || models.length === 0) {
-          const option = document.createElement('option');
-          option.value = '';
-          option.textContent = 'No reference WAV files found';
-          modelSelect.appendChild(option);
+          modelGrid.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">No models found</span>';
           setStatus('No reference models found.');
           return;
         }
 
-        models.forEach((model) => {
+        models.forEach((model, i) => {
+          // Hidden select (for compatibility)
           const option = document.createElement('option');
           option.value = model;
           option.textContent = friendlyName(model);
           modelSelect.appendChild(option);
+
+          // Visual card with description
+          const card = document.createElement('button');
+          card.className = 'model-card';
+          card.dataset.model = model;
+          const desc = getModelDesc(model);
+          card.innerHTML = `<span class="model-icon">${getModelIcon(model)}</span>${friendlyName(model)}${desc ? `<span class="model-desc">${desc}</span>` : ''}`;
+          card.addEventListener('click', () => selectModelCard(model));
+          modelGrid.appendChild(card);
         });
+
+        // Default to Calma if available
+        const calma = models.find(m => m.toLowerCase().includes('calma'));
+        const defaultModel = calma || models[0];
+        modelSelect.value = defaultModel;
+        document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
+        const defCard = document.querySelector(`.model-card[data-model="${defaultModel}"]`);
+        if (defCard) defCard.classList.add('active');
+        // Sync applied state so button shows PLAY (not APPLY)
+        appliedModel = defaultModel;
+        appliedIntensity = Number(intensitySlider.value);
 
         loaded = true;
         setStatus('Ready.');
       } catch (error) {
-        modelSelect.innerHTML = '<option value="">Unable to load models</option>';
+        modelGrid.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">Unable to load</span>';
         setStatus('Unable to load models.');
       } finally {
         setBusy(false);
-        const disabled = !loaded;
-        modelSelect.disabled = disabled;
-        playBtn.disabled = disabled;
-        exportBtn.disabled = disabled;
+        playBtn.disabled = !loaded;
+        exportBtn.disabled = !loaded;
       }
     }
 
+    // Track initial settings for detecting changes
+    let appliedModel = '';
+    let appliedIntensity = 0.25;
+
+    function markParamsDirty() {
+      const modelChanged = modelSelect.value !== appliedModel;
+      const intensityChanged = Math.abs(Number(intensitySlider.value) - appliedIntensity) > 0.005;
+      const dirty = modelChanged || intensityChanged;
+      if (dirty) {
+        playBtn.textContent = '⟳';
+        playBtn.classList.remove('playing');
+        playBtn.classList.add('dirty');
+      } else if (isPlaying) {
+        playBtn.textContent = '■';
+        playBtn.classList.add('playing');
+        playBtn.classList.remove('dirty');
+      } else {
+        playBtn.textContent = '▶';
+        playBtn.classList.remove('playing', 'dirty');
+      }
+      // 1. Update background gradient based on intensity
+      updateBackgroundGradient();
+    }
+
+    // 1. Animated background gradient
+    function updateBackgroundGradient() {
+      const intensity = Number(intensitySlider.value);
+      document.body.classList.remove('intensity-low', 'intensity-mid', 'intensity-high');
+      if (intensity < 0.35) document.body.classList.add('intensity-low');
+      else if (intensity < 0.7) document.body.classList.add('intensity-mid');
+      else document.body.classList.add('intensity-high');
+    }
+
+    // --- Arc intensity control ---
+    // Arc from left to right (rainbow shape, opening upward)
+    const ARC_CX = 70, ARC_CY = 78, ARC_R = 52;
+    const ARC_START_ANGLE = Math.PI; // left (180°)
+    const ARC_END_ANGLE = 0;         // right (0°)
+
+    function arcAngleForValue(v) {
+      // v=0 → left (π), v=1 → right (0)
+      return ARC_START_ANGLE - v * (ARC_START_ANGLE - ARC_END_ANGLE);
+    }
+
+    function arcPath(fromAngle, toAngle) {
+      const x1 = ARC_CX + ARC_R * Math.cos(fromAngle);
+      const y1 = ARC_CY - ARC_R * Math.sin(fromAngle);
+      const x2 = ARC_CX + ARC_R * Math.cos(toAngle);
+      const y2 = ARC_CY - ARC_R * Math.sin(toAngle);
+      const sweep = fromAngle > toAngle ? 0 : 1;
+      const large = Math.abs(fromAngle - toAngle) > Math.PI ? 1 : 0;
+      return `M ${x1} ${y1} A ${ARC_R} ${ARC_R} 0 ${large} ${sweep} ${x2} ${y2}`;
+    }
+
+    function updateArc(value) {
+      value = Math.max(0, Math.min(1, value));
+      intensitySlider.value = value;
+      intensityValue.textContent = value.toFixed(2);
+
+      // Background arc (full range: left to right)
+      arcBg.setAttribute('d', arcPath(ARC_START_ANGLE, ARC_END_ANGLE));
+      // Foreground arc (from left up to current value)
+      const valAngle = arcAngleForValue(value);
+      arcFg.setAttribute('d', arcPath(ARC_START_ANGLE, valAngle));
+      // Thumb position
+      const tx = ARC_CX + ARC_R * Math.cos(valAngle);
+      const ty = ARC_CY - ARC_R * Math.sin(valAngle);
+      arcThumb.setAttribute('cx', tx);
+      arcThumb.setAttribute('cy', ty);
+    }
+
+    let arcDragging = false;
+
+    function arcValueFromEvent(e) {
+      const rect = arcContainer.getBoundingClientRect();
+      const x = (e.clientX || e.touches[0].clientX) - rect.left;
+      // Simple left-to-right mapping like a horizontal slider
+      let v = x / rect.width;
+      return Math.max(0, Math.min(1, v));
+    }
+
+    arcContainer.addEventListener('mousedown', (e) => { arcDragging = true; updateArc(arcValueFromEvent(e)); markParamsDirty(); });
+    arcContainer.addEventListener('touchstart', (e) => { arcDragging = true; updateArc(arcValueFromEvent(e)); markParamsDirty(); e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => { if (arcDragging) { updateArc(arcValueFromEvent(e)); markParamsDirty(); } });
+    window.addEventListener('touchmove', (e) => { if (arcDragging) { updateArc(arcValueFromEvent(e)); markParamsDirty(); } });
+    window.addEventListener('mouseup', () => { arcDragging = false; });
+    window.addEventListener('touchend', () => { arcDragging = false; });
+
+    updateArc(0.25); // Initialize arc
+
+    // --- Export toggle ---
+    exportToggle.addEventListener('click', () => {
+      exportToggle.classList.toggle('open');
+      exportSection.classList.toggle('open');
+    });
+
     intensitySlider.addEventListener('input', updateIntensity);
+    intensitySlider.addEventListener('input', markParamsDirty);
+    modelSelect.addEventListener('change', markParamsDirty);
     volumeSlider.addEventListener('input', () => updateVolume(true));
     durationButtons.forEach((button) => {
       button.addEventListener('click', () => activateDuration(button));
@@ -979,6 +1488,8 @@
     resizeWaveCanvas();
     animateWaves();
     loadModels().then(() => {
+      appliedModel = modelSelect.value;
+      appliedIntensity = Number(intensitySlider.value);
       // Pre-cache a short starter chunk once models are loaded
       if (modelSelect.value) {
         precaching = true;
@@ -1000,6 +1511,42 @@
     infoModal.addEventListener('click', (e) => {
       if (e.target === infoModal) infoModal.classList.remove('visible');
     });
+
+
+    // 5. Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Ignore if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          playBtn.click();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          updateArc(Math.max(0, Number(intensitySlider.value) - 0.05));
+          markParamsDirty();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          updateArc(Math.min(1, Number(intensitySlider.value) + 0.05));
+          markParamsDirty();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          volumeSlider.value = Math.min(1, Number(volumeSlider.value) + 0.05);
+          updateVolume(true);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          volumeSlider.value = Math.max(0, Number(volumeSlider.value) - 0.05);
+          updateVolume(true);
+          break;
+      }
+    });
+
+    // Initialize background gradient
+    updateBackgroundGradient();
   </script>
 </body>
 </html>
