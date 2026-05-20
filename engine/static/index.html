@@ -879,9 +879,17 @@
 
     async function preview() {
       if (isPlaying) {
-        await stopPlayback({ fade: true, status: 'Stopped.' });
-        generatingOverlay.style.display = 'none';
-        return;
+        // If params changed, restart with new settings (APPLY behavior)
+        const modelChanged = modelSelect.value !== appliedModel;
+        const intensityChanged = Math.abs(Number(intensitySlider.value) - appliedIntensity) > 0.005;
+        if (modelChanged || intensityChanged) {
+          await stopPlayback({ fade: false, status: '' });
+          // Fall through to start playing with new settings
+        } else {
+          await stopPlayback({ fade: true, status: 'Stopped.' });
+          generatingOverlay.style.display = 'none';
+          return;
+        }
       }
 
       if (!modelSelect.value) {
@@ -906,6 +914,8 @@
         const token = playbackToken + 1;
         playbackToken = token;
         isPlaying = true;
+        appliedModel = modelSelect.value;
+        appliedIntensity = Number(intensitySlider.value);
 
         if (stopTimer) {
           clearTimeout(stopTimer);
@@ -1017,20 +1027,31 @@
       }
     }
 
+    // Track initial settings for detecting changes
+    let appliedModel = '';
+    let appliedIntensity = 0.5;
+
+    function markParamsDirty() {
+      const modelChanged = modelSelect.value !== appliedModel;
+      const intensityChanged = Math.abs(Number(intensitySlider.value) - appliedIntensity) > 0.005;
+      if (modelChanged || intensityChanged) {
+        if (isPlaying) {
+          playBtn.textContent = '⟳ APPLY';
+          playBtn.classList.remove('playing');
+        } else {
+          playBtn.textContent = '⟳ APPLY';
+        }
+      } else if (isPlaying) {
+        playBtn.textContent = '■ STOP';
+        playBtn.classList.add('playing');
+      } else {
+        playBtn.textContent = '▶ PLAY';
+      }
+    }
+
     intensitySlider.addEventListener('input', updateIntensity);
-    // Live parameter: changing intensity interrupts current chunk fetch
-    intensitySlider.addEventListener('change', () => {
-      if (isPlaying) {
-        // Signal current streamChunks to re-fetch with new intensity
-        paramChanged = true;
-      }
-    });
-    // Live parameter: changing model restarts playback immediately
-    modelSelect.addEventListener('change', () => {
-      if (isPlaying) {
-        stopPlayback({ fade: false, status: '' }).then(() => preview());
-      }
-    });
+    intensitySlider.addEventListener('input', markParamsDirty);
+    modelSelect.addEventListener('change', markParamsDirty);
     volumeSlider.addEventListener('input', () => updateVolume(true));
     durationButtons.forEach((button) => {
       button.addEventListener('click', () => activateDuration(button));
@@ -1048,6 +1069,8 @@
     resizeWaveCanvas();
     animateWaves();
     loadModels().then(() => {
+      appliedModel = modelSelect.value;
+      appliedIntensity = Number(intensitySlider.value);
       // Pre-cache a short starter chunk once models are loaded
       if (modelSelect.value) {
         precaching = true;

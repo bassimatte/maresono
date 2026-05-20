@@ -276,6 +276,9 @@ class SpectralSynthesizer:
             # Fast mode: single convolution with blended FIR
             audio = fftconvolve(noise, quiet_fir, mode='same')
             audio = audio * amp_envelope
+            # Add rumble layer (works in fast mode too)
+            rumble = self._generate_rumble_layer(n_samples, sr, amp_envelope, intensity)
+            audio = audio + rumble
         else:
             # Full quality: three-way spectral crossfade
             quiet_stream = fftconvolve(noise, quiet_fir, mode='same')
@@ -309,6 +312,10 @@ class SpectralSynthesizer:
 
             audio = quiet_stream * quiet_mix + bright_stream * bright_mix + wash_stream * wash_mix
             audio = audio * amp_envelope
+
+            # Add rumble layer
+            rumble = self._generate_rumble_layer(n_samples, sr, amp_envelope, intensity)
+            audio = audio + rumble
 
             # Micro-texture (skip in fast mode)
             grain = self._generate_micro_texture(n_samples, sr)
@@ -383,6 +390,70 @@ class SpectralSynthesizer:
         grain_signal = grain_signal / (np.max(np.abs(grain_signal)) + 1e-10)
 
         return 1.0 + 0.10 * grain_signal
+
+    def _generate_rumble_layer(self, n_samples: int, sr: int,
+                                amp_envelope: np.ndarray,
+                                intensity: float = 0.5) -> np.ndarray:
+        """
+        Sub-bass rumble layer (20-80 Hz) with two components:
+        1. Independent slow undertow — its own swell cycle (8-20s period)
+        2. Peak-coupled rumble — louder when main waves crash (envelope peaks)
+        
+        Returns audio to be mixed into the main signal.
+        """
+        from scipy.signal import butter, sosfilt
+
+        nyq = sr / 2
+        if nyq <= 80:
+            return np.zeros(n_samples)
+
+        # Generate bass noise source
+        noise = np.random.randn(n_samples)
+
+        # Bandpass 20-80 Hz
+        low = max(20.0 / nyq, 0.001)
+        high = min(80.0 / nyq, 0.99)
+        sos = butter(3, [low, high], btype='band', output='sos')
+        bass_noise = sosfilt(sos, noise)
+
+        # --- Component 1: Independent undertow swell ---
+        # Slow envelope with its own random period (8-20s)
+        control_rate = 10  # Hz
+        n_ctrl = max(4, int(n_samples / sr * control_rate))
+        period = np.random.uniform(8.0, 20.0)
+        t_ctrl = np.linspace(0, n_samples / sr, n_ctrl)
+        # Random phase so each chunk is different
+        phase = np.random.uniform(0, 2 * np.pi)
+        undertow_env = 0.5 + 0.5 * np.sin(2 * np.pi * t_ctrl / period + phase)
+        # Add some randomness
+        undertow_env *= (0.7 + 0.3 * np.random.rand(n_ctrl))
+        # Interpolate to sample rate
+        t_samples = np.linspace(0, n_samples / sr, n_samples)
+        undertow_env_full = np.interp(t_samples, t_ctrl, undertow_env)
+
+        # --- Component 2: Peak-coupled rumble ---
+        # Follow the main envelope but emphasize peaks
+        # Square the envelope to emphasize louder moments
+        peak_env = amp_envelope ** 2
+        # Smooth it slightly for a lagging bass response
+        from scipy.ndimage import uniform_filter1d
+        smooth_len = min(int(sr * 0.3), n_samples)  # 300ms smoothing
+        if smooth_len > 1:
+            peak_env = uniform_filter1d(peak_env, smooth_len)
+
+        # Combine: 60% independent undertow + 40% peak-coupled
+        combined_env = 0.6 * undertow_env_full + 0.4 * peak_env
+        combined_env = combined_env / (np.max(combined_env) + 1e-10)
+
+        # Apply envelope to bass noise
+        rumble = bass_noise * combined_env
+
+        # Scale by intensity — more intensity = more rumble
+        # At intensity 0: very subtle (0.04), at 1.0: prominent (0.18)
+        rumble_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.04, 0.10, 0.18])
+        rumble = rumble / (np.max(np.abs(rumble)) + 1e-10) * rumble_gain
+
+        return rumble
 
     def _build_fir(self, spectrum: np.ndarray, sr: int, order: int) -> np.ndarray:
         """Build a linear-phase FIR filter from a learned magnitude spectrum."""
