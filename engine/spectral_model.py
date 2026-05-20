@@ -184,6 +184,7 @@ class SpectralSynthesizer:
 
     def __init__(self, model: SpectralModel):
         self.model = model
+        self._last_wave_phase = None  # filled by _generate_multilayer_envelope
 
     def synthesize(self, duration: float, sr: int = None,
                    stereo: bool = True, intensity: float = 0.5,
@@ -283,23 +284,34 @@ class SpectralSynthesizer:
             bubbles = self._generate_bubble_transients(n_samples, sr, amp_envelope, intensity)
             audio = audio + bubbles
         else:
-            # Full quality: three-way spectral crossfade
+            # Full quality: three-way spectral crossfade driven by per-wave phase
             quiet_stream = fftconvolve(noise, quiet_fir, mode='same')
             bright_stream = fftconvolve(noise, bright_fir, mode='same')
             wash_stream = fftconvolve(noise, wash_fir, mode='same')
 
-            env_deriv = np.gradient(amp_envelope, 1.0 / sr)
-            d_max = np.max(np.abs(env_deriv)) + 1e-10
-            phase = 0.5 + 0.5 * (env_deriv / d_max)
+            # Use explicit per-wave spectral phase from envelope generator
+            # phase: 0=silence/between waves, rising to 1=peak/break, falling back=foam
+            phase = self._last_wave_phase if self._last_wave_phase is not None else np.zeros(n_samples)
+            if len(phase) != n_samples:
+                phase = np.interp(np.linspace(0, 1, n_samples),
+                                  np.linspace(0, 1, len(phase)), phase)
 
-            env_norm = (amp_envelope - np.min(amp_envelope)) / (np.max(amp_envelope) - np.min(amp_envelope) + 1e-10)
+            # Compute phase derivative to distinguish approach vs recede
+            phase_deriv = np.gradient(phase, 1.0 / sr)
+            d_max = np.max(np.abs(phase_deriv)) + 1e-10
+            phase_deriv_norm = phase_deriv / d_max
 
-            rising = np.clip(phase - 0.5, 0, 0.5) * 2.0
-            falling = np.clip(0.5 - phase, 0, 0.5) * 2.0
+            # Spectral mixing based on wave lifecycle:
+            # Rising phase (approach) → bright spectrum (wave face, broadband)
+            # Peak → maximum brightness
+            # Falling phase (foam/recede) → wash spectrum (hissy, thin)
+            # Low phase (between waves) → quiet spectrum (dark ambient)
+            rising = np.clip(phase_deriv_norm, 0, 1)  # positive = approaching
+            falling = np.clip(-phase_deriv_norm, 0, 1)  # negative = receding
 
-            bright_mix = rising * 0.7 + env_norm * 0.3
-            wash_mix = falling * 0.6
-            quiet_mix = np.clip(1.0 - bright_mix - wash_mix, 0.1, 1.0)
+            bright_mix = phase * rising * 0.8 + phase ** 2 * 0.2  # peaks when phase high & rising
+            wash_mix = phase * falling * 0.7  # foam: phase still high but falling
+            quiet_mix = np.clip(1.0 - phase, 0.1, 1.0)  # dominant between waves
 
             quiet_bias = np.interp(intensity, [0.0, 0.5, 1.0], [1.45, 1.0, 0.72])
             bright_bias = np.interp(intensity, [0.0, 0.5, 1.0], [0.55, 1.0, 1.45])
@@ -590,19 +602,21 @@ class SpectralSynthesizer:
                                        time_offset: float = 0.0,
                                        intensity: float = 0.5) -> np.ndarray:
         """
-        Multi-layer envelope:
-        - Layer 1 (swell): Slow 8-15s undulation — wave SETS (groups of waves)
-        - Layer 2 (waves): Individual wave events (2-8s) riding on the swell
+        Multi-layer envelope with oceanographic wave statistics:
+        - Layer 1 (swell): Slow undulation — wave SETS (groups)
+        - Layer 2 (waves): Individual waves with Rayleigh-distributed heights,
+          grouped into sets of 3-7 where middle waves are largest.
+        - Per-wave asymmetric shape: fast rise (approach/break) + slow decay (foam/recede)
         
-        The swell modulates the amplitude of individual waves, so waves
-        are bigger during swell peaks and smaller during swell troughs.
+        Returns amplitude envelope at audio sample rate.
+        Also stores self._wave_events for spectral evolution tracking.
         """
         stats = self.model.amp_stats
         intensity = float(np.clip(intensity, 0.0, 1.0))
         n_points = int(duration * 10)  # 10 Hz control rate
         dt = 1.0 / 10.0  # seconds per point
 
-        # --- Layer 1: Slow swell (8-15s period) ---
+        # --- Layer 1: Slow swell (wave groups / sets) ---
         t = np.linspace(0, duration, n_points, endpoint=False)
         swell = np.zeros(n_points)
         n_swell_layers = int(round(np.interp(intensity, [0.0, 0.5, 1.0], [2.0, 3.0, 4.0])))
@@ -619,19 +633,52 @@ class SpectralSynthesizer:
         swell = swell / (np.max(swell) + 1e-10)
         swell = swell_floor + swell_depth * swell
 
-        # --- Layer 2: Individual wave events ---
+        # --- Layer 2: Oceanographic wave events ---
+        # Waves arrive in GROUPS (sets) of 3-7, with Rayleigh-distributed heights.
+        # Within a group, wave heights follow a pattern where middle waves are largest.
         waves = np.zeros(n_points)
-        current_time = np.random.uniform(0.3, np.interp(intensity, [0.0, 1.0], [1.3, 0.45])) + time_offset
-        min_wave_duration = np.interp(intensity, [0.0, 0.5, 1.0], [1.5, 2.5, 4.0])
-        max_wave_duration = np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 7.0, 8.0])
-        min_wave_amp = np.interp(intensity, [0.0, 0.5, 1.0], [0.28, 0.5, 0.72])
-        max_wave_amp = np.interp(intensity, [0.0, 0.5, 1.0], [0.62, 1.0, 1.28])
-        long_pause_chance = np.interp(intensity, [0.0, 0.5, 1.0], [0.55, 0.25, 0.1])
+        wave_phase = np.zeros(n_points)  # 0=silence, rising=approach, 1=peak/break, falling=foam/recede
+
+        # Wave timing parameters
+        min_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [4.0, 3.0, 2.0])
+        max_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [8.0, 6.0, 4.5])
+        # Rayleigh scale parameter (significant wave height proxy)
+        rayleigh_scale = np.interp(intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.95])
+
+        current_time = np.random.uniform(0.2, 1.0)
+        group_size = 0  # waves remaining in current group
+        group_position = 0  # position within group (0-indexed)
+        group_total = 0  # total waves in current group
+        inter_group_pause = np.interp(intensity, [0.0, 0.5, 1.0], [4.0, 2.5, 1.0])
 
         while current_time < duration - 1.0:
-            active_dur = np.random.uniform(min_wave_duration, max_wave_duration)
-            wave_amp = np.random.uniform(min_wave_amp, max_wave_amp)
-            rise_frac = np.random.uniform(0.18, np.interp(intensity, [0.0, 1.0], [0.34, 0.5]))
+            # Start new group if needed
+            if group_size <= 0:
+                group_total = np.random.randint(3, 8)  # 3-7 waves per set
+                group_size = group_total
+                group_position = 0
+
+            # Rayleigh-distributed height (ocean wave height statistics)
+            raw_height = np.random.rayleigh(rayleigh_scale)
+            wave_amp = np.clip(raw_height, 0.15, 1.4)
+
+            # Group modulation: middle waves in a set are ~30% larger
+            # Bell-shaped group envelope centered at position group_total/2
+            group_center = (group_total - 1) / 2.0
+            group_factor = 1.0 + 0.3 * np.exp(-((group_position - group_center) ** 2) /
+                                               (max(1, group_total / 3.0) ** 2))
+            wave_amp *= group_factor
+
+            # Wave duration: larger waves last longer (physics: T ∝ √H)
+            base_period = np.random.uniform(min_wave_period, max_wave_period)
+            active_dur = base_period * (0.8 + 0.4 * (wave_amp / 1.4))
+
+            # Asymmetric shape: fast rise (25-40%), slow decay (60-75%)
+            # Stormy waves rise faster (more abrupt breaking)
+            rise_frac = np.random.uniform(
+                np.interp(intensity, [0.0, 1.0], [0.30, 0.20]),
+                np.interp(intensity, [0.0, 1.0], [0.42, 0.35])
+            )
 
             i_start = int(current_time / dt)
             i_end = int((current_time + active_dur) / dt)
@@ -643,23 +690,38 @@ class SpectralSynthesizer:
                 rise_len = max(2, int(n_wave * rise_frac))
                 decay_len = max(1, n_wave - rise_len)
 
-                rise = 0.5 * (1 - np.cos(np.pi * np.linspace(0, 1, rise_len)))
-                decay = 0.5 * (1 + np.cos(np.pi * np.linspace(0, 1, decay_len)))
+                # Rise: concave-up (wave approaching accelerates)
+                rise = np.linspace(0, 1, rise_len) ** 1.5
+                # Decay: convex (foam dissipates with lingering tail)
+                decay = (1.0 - np.linspace(0, 1, decay_len)) ** 0.7
 
                 wave_shape = np.concatenate([rise, decay]) * wave_amp
                 end_idx = min(i_start + len(wave_shape), n_points)
                 waves[i_start:end_idx] += wave_shape[:end_idx - i_start]
 
-            if np.random.random() < long_pause_chance:
-                pause = np.random.uniform(
-                    np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 2.0, 1.2]),
-                    np.interp(intensity, [0.0, 0.5, 1.0], [5.0, 3.5, 2.0]),
-                )
+                # Per-wave spectral phase signal:
+                # 0.0 = approaching (dark/quiet), 0.5 = rising (getting brighter),
+                # 1.0 = peak/breaking (brightest), 0.5→0 = foam/recede (hissy→dark)
+                phase_rise = np.linspace(0.0, 1.0, rise_len)
+                phase_decay = np.linspace(1.0, 0.0, decay_len)
+                phase_shape = np.concatenate([phase_rise, phase_decay])
+                # Only write where wave is active (don't overwrite with 0 in overlaps)
+                seg_len = end_idx - i_start
+                # Use max to handle overlapping waves
+                wave_phase[i_start:end_idx] = np.maximum(
+                    wave_phase[i_start:end_idx], phase_shape[:seg_len])
+
+            # Inter-wave pause: shorter within group, longer between groups
+            group_size -= 1
+            group_position += 1
+
+            if group_size <= 0:
+                # Between groups: longer pause with some randomness
+                pause = np.random.uniform(inter_group_pause * 0.7, inter_group_pause * 1.5)
             else:
-                pause = np.random.uniform(
-                    np.interp(intensity, [0.0, 0.5, 1.0], [1.2, 0.6, 0.2]),
-                    np.interp(intensity, [0.0, 0.5, 1.0], [2.8, 1.8, 0.8]),
-                )
+                # Within group: regular spacing with slight jitter
+                base_pause = np.interp(intensity, [0.0, 0.5, 1.0], [1.0, 0.5, 0.15])
+                pause = np.random.uniform(base_pause * 0.6, base_pause * 1.4)
 
             current_time += active_dur + pause
 
@@ -688,6 +750,12 @@ class SpectralSynthesizer:
         n_audio = int(duration * sr)
         envelope_interp = interp1d(np.linspace(0, 1, len(envelope)),
                                    envelope, kind='cubic')
+        
+        # Also upsample wave phase for spectral evolution
+        phase_interp = interp1d(np.linspace(0, 1, len(wave_phase)),
+                                wave_phase, kind='linear')
+        self._last_wave_phase = phase_interp(np.linspace(0, 1, n_audio))
+
         return envelope_interp(np.linspace(0, 1, n_audio))
 
 
