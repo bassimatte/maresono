@@ -14,7 +14,7 @@ import soundfile as sf
 try:
     from fastapi import FastAPI, HTTPException
     from fastapi.middleware.cors import CORSMiddleware
-    from fastapi.responses import FileResponse, StreamingResponse
+    from fastapi.responses import FileResponse, Response, StreamingResponse
     from pydantic import BaseModel, Field
     import uvicorn
 except ImportError as exc:
@@ -32,7 +32,7 @@ _STATIC_DIR = _ENGINE_DIR / "static"
 _INDEX_FILE = _STATIC_DIR / "index.html"
 _EXPORTS_DIR = _REPO_DIR / "exports"
 _DEFAULT_MODELS_DIR = _REPO_DIR / "models"
-_PREVIEW_SECONDS = 20.0
+_PREVIEW_SECONDS = 30.0
 
 _EXPORTS_DIR.mkdir(exist_ok=True)
 
@@ -167,8 +167,8 @@ async def render_audio(request: RenderRequest):
 @app.post("/api/preview")
 async def preview_audio(request: RenderRequest):
     buffer, filename = await asyncio.to_thread(_render_package, request, preview=True)
-    return StreamingResponse(
-        buffer,
+    return Response(
+        content=buffer.getvalue(),
         media_type="audio/wav",
         headers={"Content-Disposition": f'inline; filename="preview-{filename}"'},
     )

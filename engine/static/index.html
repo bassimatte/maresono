@@ -71,13 +71,13 @@
     .orb-wrap {
       display: grid;
       place-items: center;
-      margin: -28px -28px 20px -28px;
+      margin: -28px -28px 24px -28px;
     }
 
     .wave-canvas {
       width: 100% !important;
       height: auto;
-      aspect-ratio: 16 / 7;
+      aspect-ratio: 16 / 9;
       border-radius: 22px 22px 0 0;
       background:
         radial-gradient(circle at top, rgba(45, 212, 191, 0.12), transparent 52%),
@@ -89,6 +89,117 @@
     .controls {
       display: grid;
       gap: 18px;
+    }
+
+    /* Model cards */
+    .model-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+      gap: 8px;
+    }
+
+    .model-card {
+      padding: 10px 6px;
+      border: 1px solid rgba(142, 169, 191, 0.12);
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--muted);
+      font-size: 0.76rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      line-height: 1.2;
+    }
+
+    .model-card:hover {
+      background: rgba(45, 212, 191, 0.06);
+      border-color: rgba(45, 212, 191, 0.2);
+      color: var(--text);
+    }
+
+    .model-card.active {
+      background: var(--accent-soft);
+      border-color: var(--accent-strong);
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .model-card .model-icon {
+      display: block;
+      font-size: 1.2rem;
+      margin-bottom: 4px;
+    }
+
+    /* Intensity arc */
+    .intensity-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .arc-container {
+      position: relative;
+      width: 140px;
+      height: 90px;
+      cursor: pointer;
+      touch-action: none;
+    }
+
+    .arc-container svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .arc-label {
+      font-size: 0.72rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .arc-value {
+      position: absolute;
+      bottom: 2px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.82rem;
+      color: var(--accent);
+      font-weight: 500;
+    }
+
+    .arc-ends {
+      display: flex;
+      justify-content: space-between;
+      width: 140px;
+      font-size: 0.68rem;
+      color: var(--muted);
+      opacity: 0.7;
+      margin-top: -2px;
+    }
+
+    /* Volume slider (kept simple) */
+    .volume-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .volume-row label {
+      font-size: 0.78rem;
+      color: var(--muted);
+      min-width: 48px;
+    }
+
+    .volume-row input[type="range"] {
+      flex: 1;
+    }
+
+    .volume-row .vol-val {
+      font-size: 0.78rem;
+      color: var(--muted);
+      min-width: 32px;
+      text-align: right;
     }
 
     .slider-pair {
@@ -257,13 +368,50 @@
       margin: 20px 0 12px;
     }
 
-    .duration-section {
-      transition: opacity 0.4s ease, max-height 0.4s ease;
+    .export-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      background: none;
+      border: none;
+      color: var(--muted);
+      font-size: 0.78rem;
+      cursor: pointer;
+      padding: 4px 12px;
+      margin: 0 auto;
       opacity: 0.7;
+      transition: opacity 0.2s;
     }
 
-    .duration-section:hover {
+    .export-toggle:hover {
       opacity: 1;
+      color: var(--accent);
+    }
+
+    .export-toggle .chevron {
+      transition: transform 0.3s ease;
+      font-size: 0.6rem;
+    }
+
+    .export-toggle.open .chevron {
+      transform: rotate(180deg);
+    }
+
+    .export-section {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.35s ease, opacity 0.35s ease;
+      opacity: 0;
+    }
+
+    .export-section.open {
+      max-height: 200px;
+      opacity: 1;
+    }
+
+    .duration-section {
+      transition: opacity 0.4s ease, max-height 0.4s ease;
     }
 
     .duration-section.dimmed {
@@ -432,33 +580,34 @@
         <span class="spinner active"></span> Generating first wave...
       </div>
 
+      <!-- Model cards -->
       <div class="field">
-        <label for="modelSelect">Model</label>
-        <select id="modelSelect"></select>
+        <label>Model</label>
+        <div class="model-grid" id="modelGrid"></div>
+        <select id="modelSelect" style="display:none;"></select>
       </div>
 
+      <!-- Intensity arc + Volume -->
       <div class="slider-pair">
-        <div class="field">
-          <div class="field-head">
-            <span>Intensity</span>
-            <span id="intensityValue">0.50</span>
+        <div class="intensity-wrap">
+          <span class="arc-label">Intensity</span>
+          <div class="arc-container" id="arcContainer">
+            <svg viewBox="0 0 140 90">
+              <path id="arcBg" d="" fill="none" stroke="rgba(45,212,191,0.15)" stroke-width="8" stroke-linecap="round"/>
+              <path id="arcFg" d="" fill="none" stroke="rgba(45,212,191,0.8)" stroke-width="8" stroke-linecap="round"/>
+              <circle id="arcThumb" cx="0" cy="0" r="7" fill="#d9fffb" stroke="rgba(45,212,191,0.6)" stroke-width="2" style="cursor:pointer;"/>
+            </svg>
+            <span class="arc-value" id="intensityValue">0.50</span>
           </div>
-          <input id="intensitySlider" type="range" min="0" max="1" step="0.01" value="0.5" />
-          <div class="range-labels">
-            <span>calm</span>
-            <span>stormy</span>
-          </div>
+          <div class="arc-ends"><span>calm</span><span>stormy</span></div>
+          <input id="intensitySlider" type="hidden" value="0.5" />
         </div>
 
-        <div class="field">
-          <div class="field-head">
-            <span>Volume</span>
-            <span id="volumeValue">75%</span>
-          </div>
-          <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.75" />
-          <div class="range-labels">
-            <span>quiet</span>
-            <span>full</span>
+        <div class="field" style="display:flex;flex-direction:column;justify-content:center;">
+          <div class="volume-row">
+            <label>Volume</label>
+            <input id="volumeSlider" type="range" min="0" max="1" step="0.01" value="0.75" />
+            <span class="vol-val" id="volumeValue">75%</span>
           </div>
         </div>
       </div>
@@ -474,22 +623,29 @@
 
       <hr class="divider" />
 
-      <div class="field duration-section">
-        <div class="field-head">
-          <span>Export Duration</span>
-          <span id="durationValue">5m</span>
+      <button class="export-toggle" id="exportToggle">
+        <span>Export</span>
+        <span class="chevron">▼</span>
+      </button>
+
+      <div class="export-section" id="exportSection">
+        <div class="field duration-section">
+          <div class="field-head">
+            <span>Duration</span>
+            <span id="durationValue">5m</span>
+          </div>
+          <div class="duration-grid" id="durationGrid">
+            <button class="duration-btn active" data-duration="300">5m</button>
+            <button class="duration-btn" data-duration="900">15m</button>
+            <button class="duration-btn" data-duration="1800">30m</button>
+            <button class="duration-btn" data-duration="3600">60m</button>
+            <button class="duration-btn" data-duration="7200">∞</button>
+          </div>
+          <div class="footnote">∞ exports a long-form 120m drift.</div>
         </div>
-        <div class="duration-grid" id="durationGrid">
-          <button class="duration-btn active" data-duration="300">5m</button>
-          <button class="duration-btn" data-duration="900">15m</button>
-          <button class="duration-btn" data-duration="1800">30m</button>
-          <button class="duration-btn" data-duration="3600">60m</button>
-          <button class="duration-btn" data-duration="7200">∞</button>
+        <div class="actions" style="margin-top:10px;">
+          <button id="exportBtn" class="action-btn secondary">↓ EXPORT WAV</button>
         </div>
-        <div class="footnote">∞ exports a long-form 120m drift.</div>
-      </div>
-      <div class="actions">
-        <button id="exportBtn" class="action-btn secondary">↓ EXPORT WAV</button>
       </div>
     </section>
   </main>
@@ -507,15 +663,19 @@
   </div>
 
   <script>
-    const CROSSFADE_SECONDS = 0.5;
-    const PREFETCH_LEAD_SECONDS = 6.0;
+    const CROSSFADE_SECONDS = 0.8;
     const PLAY_FADE_SECONDS = 1.5;
     const STOP_FADE_SECONDS = 1.0;
     const VOLUME_RAMP_SECONDS = 0.1;
 
     const modelSelect = document.getElementById('modelSelect');
+    const modelGrid = document.getElementById('modelGrid');
     const intensitySlider = document.getElementById('intensitySlider');
     const intensityValue = document.getElementById('intensityValue');
+    const arcContainer = document.getElementById('arcContainer');
+    const arcBg = document.getElementById('arcBg');
+    const arcFg = document.getElementById('arcFg');
+    const arcThumb = document.getElementById('arcThumb');
     const volumeSlider = document.getElementById('volumeSlider');
     const volumeValue = document.getElementById('volumeValue');
     const durationValue = document.getElementById('durationValue');
@@ -523,6 +683,8 @@
     const durationSection = document.querySelector('.duration-section');
     const playBtn = document.getElementById('playBtn');
     const exportBtn = document.getElementById('exportBtn');
+    const exportToggle = document.getElementById('exportToggle');
+    const exportSection = document.getElementById('exportSection');
     const generatingOverlay = document.getElementById('generatingOverlay');
     const statusText = document.getElementById('statusText');
     const statusSub = document.getElementById('statusSub');
@@ -568,9 +730,13 @@
 
     function setBusy(busy, message) {
       spinner.classList.toggle('visible', busy);
-      [playBtn, exportBtn, modelSelect, intensitySlider, volumeSlider, ...durationButtons].forEach((node) => {
+      [playBtn, exportBtn, volumeSlider, ...durationButtons].forEach((node) => {
         node.disabled = busy;
       });
+      arcContainer.style.pointerEvents = busy ? 'none' : '';
+      arcContainer.style.opacity = busy ? '0.5' : '';
+      modelGrid.style.pointerEvents = busy ? 'none' : '';
+      modelGrid.style.opacity = busy ? '0.5' : '';
       if (message) {
         statusText.textContent = message;
       }
@@ -793,15 +959,15 @@
       return response;
     }
 
+    const STREAM_CHUNK_SECONDS = 25; // chunk length for continuous playback
+
     async function fetchChunk(shortDuration = null) {
       const payload = {
         model: modelSelect.value,
         duration: selectedDuration,
-        intensity: Number(intensitySlider.value)
+        intensity: Number(intensitySlider.value),
+        preview_duration: shortDuration || STREAM_CHUNK_SECONDS
       };
-      if (shortDuration) {
-        payload.preview_duration = shortDuration;
-      }
       const response = await fetchAudio('/api/preview', payload);
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
@@ -840,40 +1006,53 @@
     async function streamChunks(initialBuffer, token) {
       let buffer = initialBuffer;
       let startTime = audioContext.currentTime + 0.05;
+      // Immediately start fetching the NEXT chunk (eager pre-fetch)
+      let nextBufferPromise = fetchChunk();
 
       while (isPlaying && token === playbackToken) {
         const scheduled = scheduleChunk(buffer, startTime, token);
         const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime - scheduled.fade);
 
-        // Wait until it's time to fetch next chunk, but break early if params changed
-        const waitMs = Math.max(0, (nextStart - audioContext.currentTime - PREFETCH_LEAD_SECONDS) * 1000);
-        if (waitMs > 0 && !paramChanged) {
+        // Start fetching chunk after next (always stay 1 chunk ahead)
+        const afterNextPromise = fetchChunk();
+
+        // Wait for the already-fetching next chunk
+        let nextBuffer = null;
+        try {
+          nextBuffer = await nextBufferPromise;
+        } catch (error) {
+          if (!isPlaying || token !== playbackToken) break;
+          // Retry once
+          try {
+            nextBuffer = await fetchChunk();
+          } catch (e2) {
+            if (!isPlaying || token !== playbackToken) break;
+            setStatus(e2.message || 'Generating next wave...');
+            await sleep(500);
+            nextBuffer = await fetchChunk();
+          }
+        }
+
+        if (!isPlaying || token !== playbackToken || !nextBuffer) break;
+
+        // Wait until it's almost time to play the next chunk
+        const now = audioContext.currentTime;
+        const waitUntil = nextStart - 0.1;
+        if (waitUntil > now) {
+          const waitMs = (waitUntil - now) * 1000;
           const step = 200;
           let waited = 0;
-          while (waited < waitMs && !paramChanged && isPlaying && token === playbackToken) {
+          while (waited < waitMs && isPlaying && token === playbackToken) {
             await sleep(Math.min(step, waitMs - waited));
             waited += step;
           }
         }
-        paramChanged = false;
 
-        let nextBuffer = null;
-        while (isPlaying && token === playbackToken && !nextBuffer) {
-          try {
-            nextBuffer = await fetchChunk();
-          } catch (error) {
-            if (!isPlaying || token !== playbackToken) break;
-            setStatus(error.message || 'Generating next wave...');
-            await sleep(750);
-          }
-        }
-
-        if (!isPlaying || token !== playbackToken || !nextBuffer) {
-          break;
-        }
+        if (!isPlaying || token !== playbackToken) break;
 
         startTime = nextStart;
         buffer = nextBuffer;
+        nextBufferPromise = afterNextPromise; // Use the pre-fetched promise
       }
     }
 
@@ -984,6 +1163,17 @@
       }
     }
 
+    // Wave icons for model cards
+    const modelIcons = ['🌊', '💎', '🌙', '🐚', '🌀', '💠', '🧜', '⚡', '🏔️', '🌊'];
+
+    function selectModelCard(modelValue) {
+      modelSelect.value = modelValue;
+      document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
+      const card = document.querySelector(`.model-card[data-model="${modelValue}"]`);
+      if (card) card.classList.add('active');
+      markParamsDirty();
+    }
+
     async function loadModels() {
       setBusy(true, 'Loading models...');
       let loaded = false;
@@ -992,38 +1182,44 @@
         const response = await fetch('/api/models');
         const models = await response.json();
         modelSelect.innerHTML = '';
+        modelGrid.innerHTML = '';
 
         if (!Array.isArray(models) || models.length === 0) {
-          const option = document.createElement('option');
-          option.value = '';
-          option.textContent = 'No reference WAV files found';
-          modelSelect.appendChild(option);
+          modelGrid.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">No models found</span>';
           setStatus('No reference models found.');
           return;
         }
 
-        models.forEach((model) => {
+        models.forEach((model, i) => {
+          // Hidden select (for compatibility)
           const option = document.createElement('option');
           option.value = model;
           option.textContent = friendlyName(model);
           modelSelect.appendChild(option);
+
+          // Visual card
+          const card = document.createElement('button');
+          card.className = 'model-card';
+          card.dataset.model = model;
+          card.innerHTML = `<span class="model-icon">${modelIcons[i % modelIcons.length]}</span>${friendlyName(model)}`;
+          card.addEventListener('click', () => selectModelCard(model));
+          modelGrid.appendChild(card);
         });
 
         // Default to Calma if available
         const calma = models.find(m => m.toLowerCase().includes('calma'));
-        if (calma) modelSelect.value = calma;
+        const defaultModel = calma || models[0];
+        selectModelCard(defaultModel);
 
         loaded = true;
         setStatus('Ready.');
       } catch (error) {
-        modelSelect.innerHTML = '<option value="">Unable to load models</option>';
+        modelGrid.innerHTML = '<span style="color:var(--muted);font-size:0.8rem;">Unable to load</span>';
         setStatus('Unable to load models.');
       } finally {
         setBusy(false);
-        const disabled = !loaded;
-        modelSelect.disabled = disabled;
-        playBtn.disabled = disabled;
-        exportBtn.disabled = disabled;
+        playBtn.disabled = !loaded;
+        exportBtn.disabled = !loaded;
       }
     }
 
@@ -1048,6 +1244,69 @@
         playBtn.textContent = '▶ PLAY';
       }
     }
+
+    // --- Arc intensity control ---
+    // Arc from left to right (rainbow shape, opening upward)
+    const ARC_CX = 70, ARC_CY = 78, ARC_R = 52;
+    const ARC_START_ANGLE = Math.PI; // left (180°)
+    const ARC_END_ANGLE = 0;         // right (0°)
+
+    function arcAngleForValue(v) {
+      // v=0 → left (π), v=1 → right (0)
+      return ARC_START_ANGLE - v * (ARC_START_ANGLE - ARC_END_ANGLE);
+    }
+
+    function arcPath(fromAngle, toAngle) {
+      const x1 = ARC_CX + ARC_R * Math.cos(fromAngle);
+      const y1 = ARC_CY - ARC_R * Math.sin(fromAngle);
+      const x2 = ARC_CX + ARC_R * Math.cos(toAngle);
+      const y2 = ARC_CY - ARC_R * Math.sin(toAngle);
+      const sweep = fromAngle > toAngle ? 0 : 1;
+      const large = Math.abs(fromAngle - toAngle) > Math.PI ? 1 : 0;
+      return `M ${x1} ${y1} A ${ARC_R} ${ARC_R} 0 ${large} ${sweep} ${x2} ${y2}`;
+    }
+
+    function updateArc(value) {
+      value = Math.max(0, Math.min(1, value));
+      intensitySlider.value = value;
+      intensityValue.textContent = value.toFixed(2);
+
+      // Background arc (full range: left to right)
+      arcBg.setAttribute('d', arcPath(ARC_START_ANGLE, ARC_END_ANGLE));
+      // Foreground arc (from left up to current value)
+      const valAngle = arcAngleForValue(value);
+      arcFg.setAttribute('d', arcPath(ARC_START_ANGLE, valAngle));
+      // Thumb position
+      const tx = ARC_CX + ARC_R * Math.cos(valAngle);
+      const ty = ARC_CY - ARC_R * Math.sin(valAngle);
+      arcThumb.setAttribute('cx', tx);
+      arcThumb.setAttribute('cy', ty);
+    }
+
+    let arcDragging = false;
+
+    function arcValueFromEvent(e) {
+      const rect = arcContainer.getBoundingClientRect();
+      const x = (e.clientX || e.touches[0].clientX) - rect.left;
+      // Simple left-to-right mapping like a horizontal slider
+      let v = x / rect.width;
+      return Math.max(0, Math.min(1, v));
+    }
+
+    arcContainer.addEventListener('mousedown', (e) => { arcDragging = true; updateArc(arcValueFromEvent(e)); markParamsDirty(); });
+    arcContainer.addEventListener('touchstart', (e) => { arcDragging = true; updateArc(arcValueFromEvent(e)); markParamsDirty(); e.preventDefault(); });
+    window.addEventListener('mousemove', (e) => { if (arcDragging) { updateArc(arcValueFromEvent(e)); markParamsDirty(); } });
+    window.addEventListener('touchmove', (e) => { if (arcDragging) { updateArc(arcValueFromEvent(e)); markParamsDirty(); } });
+    window.addEventListener('mouseup', () => { arcDragging = false; });
+    window.addEventListener('touchend', () => { arcDragging = false; });
+
+    updateArc(0.5); // Initialize arc
+
+    // --- Export toggle ---
+    exportToggle.addEventListener('click', () => {
+      exportToggle.classList.toggle('open');
+      exportSection.classList.toggle('open');
+    });
 
     intensitySlider.addEventListener('input', updateIntensity);
     intensitySlider.addEventListener('input', markParamsDirty);
