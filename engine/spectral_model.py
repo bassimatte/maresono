@@ -226,21 +226,52 @@ class SpectralSynthesizer:
             wash_fir = self._build_wash_fir(render_sr, fir_order)
 
         if stereo:
-            mono = self._render_channel(n_samples, render_sr,
-                                        quiet_fir if not fast else blended_fir,
-                                        bright_fir if not fast else blended_fir,
-                                        wash_fir if not fast else blended_fir,
-                                        seed_offset=0, time_offset=0.0,
-                                        intensity=intensity, fast=fast)
-            side = self._render_channel(n_samples, render_sr,
-                                        quiet_fir if not fast else blended_fir,
-                                        bright_fir if not fast else blended_fir,
-                                        wash_fir if not fast else blended_fir,
-                                        seed_offset=77, time_offset=12.0,
-                                        intensity=intensity, fast=fast)
-            width = 0.05
-            left = mono * (1.0 - width) + side * width
-            right = mono * (1.0 - width) + side * (-width)
+            # === SPATIAL OCEAN: far breakers + near lapping + shore wash ===
+            # Far layer: main breakers with wide stereo movement
+            far_left = self._render_channel(n_samples, render_sr,
+                                            quiet_fir if not fast else blended_fir,
+                                            bright_fir if not fast else blended_fir,
+                                            wash_fir if not fast else blended_fir,
+                                            seed_offset=0, time_offset=0.0,
+                                            intensity=intensity, fast=fast)
+            far_right = self._render_channel(n_samples, render_sr,
+                                             quiet_fir if not fast else blended_fir,
+                                             bright_fir if not fast else blended_fir,
+                                             wash_fir if not fast else blended_fir,
+                                             seed_offset=77, time_offset=3.5,
+                                             intensity=intensity, fast=fast)
+
+            # Spatial panning for far layer — waves sweep L↔R
+            far_pan = self._generate_spatial_pan(n_samples, render_sr, intensity, layer='far')
+            far_l = far_left * (1.0 - far_pan) + far_right * far_pan * 0.3
+            far_r = far_right * far_pan + far_left * (1.0 - far_pan) * 0.3
+
+            # Near layer: small intimate lapping waves (different timing, brighter)
+            near_left = self._render_near_layer(n_samples, render_sr,
+                                                bright_fir if not fast else blended_fir,
+                                                wash_fir if not fast else blended_fir,
+                                                seed_offset=200, intensity=intensity, fast=fast)
+            near_right = self._render_near_layer(n_samples, render_sr,
+                                                 bright_fir if not fast else blended_fir,
+                                                 wash_fir if not fast else blended_fir,
+                                                 seed_offset=311, intensity=intensity, fast=fast)
+
+            # Near layer panning — narrower, more centered
+            near_pan = self._generate_spatial_pan(n_samples, render_sr, intensity, layer='near')
+            near_l = near_left * (0.6 + 0.4 * (1.0 - near_pan))
+            near_r = near_right * (0.6 + 0.4 * near_pan)
+
+            # Shore wash: high-freq texture from far-layer phase
+            shore_l, shore_r = self._generate_shore_wash(n_samples, render_sr, intensity, fast=fast)
+
+            # Mix layers: far (dominant) + near (intimate detail) + shore (texture)
+            far_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.65, 0.70, 0.75])
+            near_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.30, 0.25, 0.20])
+            shore_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.06, 0.08, 0.10])
+
+            left = far_l * far_gain + near_l * near_gain + shore_l * shore_gain
+            right = far_r * far_gain + near_r * near_gain + shore_r * shore_gain
+
             peak = max(np.max(np.abs(left)), np.max(np.abs(right)))
             if peak > 0:
                 target_peak = np.interp(intensity, [0.0, 0.5, 1.0], [0.55, 0.9, 0.98])
@@ -397,6 +428,234 @@ class SpectralSynthesizer:
         fir = fir / (np.sqrt(np.sum(fir ** 2)) + 1e-10)
 
         return fir
+
+    def _generate_spatial_pan(self, n_samples: int, sr: int,
+                              intensity: float, layer: str = 'far') -> np.ndarray:
+        """
+        Generate a smooth stereo panning signal for spatial wave movement.
+        
+        Far layer: wide sweeps (0.1-0.9 range) at wave-group rate
+        Near layer: narrower, faster random movement (0.3-0.7 range)
+        
+        Returns array in [0,1] where 0.5=center, 0=full left, 1=full right.
+        """
+        from scipy.ndimage import uniform_filter1d
+
+        # Control rate for smooth panning
+        ctrl_rate = 10  # Hz
+        n_ctrl = max(4, int(n_samples / sr * ctrl_rate))
+
+        rng = np.random.default_rng()
+
+        if layer == 'far':
+            # Slow sweeps correlated with wave groups — period 6-15s
+            n_sweeps = max(2, int(n_samples / sr / np.random.uniform(6, 12)))
+            # Random target positions per sweep
+            targets = rng.uniform(0.15, 0.85, n_sweeps + 1)
+            # Interpolate smoothly between targets
+            t_targets = np.linspace(0, n_ctrl - 1, n_sweeps + 1)
+            t_all = np.arange(n_ctrl)
+            pan_ctrl = np.interp(t_all, t_targets, targets)
+            # Extra smoothing for natural sweep
+            smooth_size = max(3, int(ctrl_rate * 1.5))
+            pan_ctrl = uniform_filter1d(pan_ctrl, smooth_size)
+        else:
+            # Near layer: faster, narrower, more random
+            pan_ctrl = rng.uniform(0.3, 0.7, n_ctrl)
+            # Smooth to avoid clicks
+            smooth_size = max(3, int(ctrl_rate * 0.8))
+            pan_ctrl = uniform_filter1d(pan_ctrl, smooth_size)
+
+        # Upsample to audio rate
+        pan = np.interp(np.linspace(0, 1, n_samples),
+                        np.linspace(0, 1, n_ctrl), pan_ctrl)
+        return pan
+
+    def _render_near_layer(self, n_samples: int, sr: int,
+                           bright_fir: np.ndarray, wash_fir: np.ndarray,
+                           seed_offset: int = 200,
+                           intensity: float = 0.5, fast: bool = False) -> np.ndarray:
+        """
+        Render the 'near' layer — small intimate waves lapping at your feet.
+        
+        Characteristics vs far layer:
+        - Shorter wave periods (1.5-4s vs 3-8s)
+        - Less dynamic range (quieter peaks, higher floor — always audible)
+        - Brighter spectrum (more high-frequency sand/water detail)
+        - Independent timing from far layer
+        """
+        from scipy.signal import fftconvolve
+
+        rng = np.random.default_rng(seed=seed_offset + int(n_samples * 0.37))
+        noise = rng.standard_normal(n_samples)
+
+        # Generate near-wave envelope with faster, smaller waves
+        near_env = self._generate_near_envelope(n_samples / sr, sr, intensity)
+
+        if fast:
+            audio = fftconvolve(noise, bright_fir, mode='same')
+            audio = audio * near_env
+        else:
+            # Near waves are mostly bright + wash (little quiet component)
+            bright_stream = fftconvolve(noise, bright_fir, mode='same')
+            if wash_fir is not None:
+                wash_stream = fftconvolve(noise, wash_fir, mode='same')
+                # Near waves: 60% bright + 40% wash (hissy sand sound)
+                audio = bright_stream * 0.6 + wash_stream * 0.4
+            else:
+                audio = bright_stream
+            audio = audio * near_env
+
+        # Normalize
+        peak = np.max(np.abs(audio))
+        if peak > 0:
+            target = np.interp(intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.85])
+            audio = audio / peak * target
+
+        return audio
+
+    def _generate_near_envelope(self, duration: float, sr: int,
+                                intensity: float) -> np.ndarray:
+        """
+        Envelope for near lapping waves — faster, smaller, more regular.
+        Period: 1.5-4s, amplitude: 0.3-0.7 (never as loud as far breakers).
+        """
+        from scipy.ndimage import uniform_filter1d
+
+        n_points = int(duration * 10)  # 10 Hz control rate
+        dt = 1.0 / 10.0
+        envelope = np.zeros(n_points)
+
+        # Near wave timing: shorter periods, more regular
+        min_period = np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 2.2, 1.5])
+        max_period = np.interp(intensity, [0.0, 0.5, 1.0], [5.0, 4.0, 3.0])
+
+        current_time = np.random.uniform(0.3, 1.5)
+        while current_time < duration - 0.5:
+            period = np.random.uniform(min_period, max_period)
+            amp = np.random.uniform(0.3, 0.7)
+
+            # Gentler shape: symmetric-ish, like water lapping
+            rise_frac = np.random.uniform(0.35, 0.50)
+            active_dur = period * 0.7  # shorter active portion
+
+            i_start = int(current_time / dt)
+            i_end = int((current_time + active_dur) / dt)
+            i_start = max(0, min(i_start, n_points - 1))
+            i_end = max(i_start + 1, min(i_end, n_points))
+            n_wave = i_end - i_start
+
+            if n_wave > 2:
+                rise_len = max(2, int(n_wave * rise_frac))
+                decay_len = max(1, n_wave - rise_len)
+                # Gentler shape for lapping (less sharp peak)
+                rise = np.linspace(0, 1, rise_len) ** 1.2
+                decay = (1.0 - np.linspace(0, 1, decay_len)) ** 0.9
+                wave_shape = np.concatenate([rise, decay]) * amp
+                end_idx = min(i_start + len(wave_shape), n_points)
+                envelope[i_start:end_idx] = np.maximum(
+                    envelope[i_start:end_idx], wave_shape[:end_idx - i_start])
+
+            # Short pause between lapping waves
+            pause = np.random.uniform(0.2, 0.8)
+            current_time += active_dur + pause
+
+        # Add ambient floor (near water is always present)
+        floor = np.interp(intensity, [0.0, 0.5, 1.0], [0.10, 0.15, 0.20])
+        envelope = np.maximum(envelope, floor)
+
+        # Smooth
+        envelope = uniform_filter1d(envelope, size=5)
+
+        # Upsample to audio rate
+        n_audio = int(duration * sr)
+        from scipy.interpolate import interp1d
+        env_interp = interp1d(np.linspace(0, 1, len(envelope)),
+                              envelope, kind='cubic')
+        return env_interp(np.linspace(0, 1, n_audio))
+
+    def _generate_shore_wash(self, n_samples: int, sr: int,
+                             intensity: float,
+                             fast: bool = False) -> tuple:
+        """
+        Shore wash layer — the distinctive 'shhhh' of water rushing up sand
+        and the gurgling drain-back.
+        
+        Triggered by the far-layer wave phase (self._last_wave_phase).
+        High-frequency (1-8kHz) with long foam tails.
+        Returns (left, right) tuple.
+        """
+        from scipy.signal import butter, sosfilt
+        from scipy.ndimage import uniform_filter1d
+
+        nyq = sr / 2
+
+        # Use the wave phase from far layer to time shore interaction
+        phase = self._last_wave_phase if self._last_wave_phase is not None else np.zeros(n_samples)
+        if len(phase) != n_samples:
+            phase = np.interp(np.linspace(0, 1, n_samples),
+                              np.linspace(0, 1, len(phase)), phase)
+
+        # Shore wash happens during and after wave peak (phase > 0.4)
+        # with a long extended tail (foam persists on sand)
+        # Work at control rate (100 Hz) for performance, then upsample
+        ctrl_rate = 100
+        n_ctrl = max(4, int(n_samples / sr * ctrl_rate))
+        phase_ctrl = np.interp(np.linspace(0, 1, n_ctrl),
+                               np.linspace(0, 1, n_samples), phase)
+
+        shore_ctrl = np.zeros(n_ctrl)
+        decay_rate = np.interp(intensity, [0.0, 0.5, 1.0], [0.3, 0.5, 0.8])
+        decay_per_step = decay_rate / ctrl_rate
+        rise_alpha = 1.0 - 0.95 ** (sr / ctrl_rate)  # adapt smoothing to ctrl rate
+
+        running_level = 0.0
+        for i in range(n_ctrl):
+            input_energy = max(0, phase_ctrl[i] - 0.3) * 2.0
+            if input_energy > running_level:
+                running_level = running_level * (1.0 - rise_alpha) + input_energy * rise_alpha
+            else:
+                running_level = max(0, running_level - decay_per_step)
+            shore_ctrl[i] = running_level
+
+        # Upsample to audio rate
+        shore_trigger = np.interp(np.linspace(0, 1, n_samples),
+                                  np.linspace(0, 1, n_ctrl), shore_ctrl)
+
+        # Normalize
+        peak_trigger = np.max(shore_trigger)
+        if peak_trigger > 0:
+            shore_trigger = shore_trigger / peak_trigger
+
+        # Generate shore noise — band-limited 800Hz-8kHz (sand/foam character)
+        rng_l = np.random.default_rng(seed=42)
+        rng_r = np.random.default_rng(seed=99)
+        noise_l = rng_l.standard_normal(n_samples)
+        noise_r = rng_r.standard_normal(n_samples)
+
+        # Bandpass for shore character
+        low_cut = min(800.0 / nyq, 0.95)
+        high_cut = min(8000.0 / nyq, 0.99)
+        if low_cut < high_cut:
+            sos = butter(3, [low_cut, high_cut], btype='band', output='sos')
+            shore_noise_l = sosfilt(sos, noise_l)
+            shore_noise_r = sosfilt(sos, noise_r)
+        else:
+            shore_noise_l = noise_l
+            shore_noise_r = noise_r
+
+        # Apply shore trigger envelope
+        shore_l = shore_noise_l * shore_trigger
+        shore_r = shore_noise_r * shore_trigger
+
+        # Normalize
+        max_val = max(np.max(np.abs(shore_l)), np.max(np.abs(shore_r)))
+        if max_val > 0:
+            target = np.interp(intensity, [0.0, 0.5, 1.0], [0.5, 0.75, 0.95])
+            shore_l = shore_l / max_val * target
+            shore_r = shore_r / max_val * target
+
+        return shore_l, shore_r
 
     def _generate_micro_texture(self, n_samples: int, sr: int) -> np.ndarray:
         """Subtle 5-20 Hz amplitude flicker simulating sphere contacts."""

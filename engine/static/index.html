@@ -320,6 +320,12 @@
       padding: 12px 24px;
       min-width: 140px;
     }
+    .action-btn.cancellable {
+      border-color: rgba(239, 68, 68, 0.5);
+      color: #ef4444;
+      opacity: 1 !important;
+      cursor: pointer !important;
+    }
 
     .action-btn:hover,
     .duration-btn:hover {
@@ -472,6 +478,82 @@
       50% { box-shadow: 0 0 24px rgba(45, 212, 191, 0.35), 0 0 48px rgba(45, 212, 191, 0.12); }
     }
 
+    /* 1. Animated background gradient */
+    body {
+      transition: background 2s ease;
+    }
+    body.intensity-low {
+      background:
+        radial-gradient(circle at top, rgba(45, 140, 191, 0.12), transparent 34%),
+        linear-gradient(180deg, #0d1b31 0%, var(--bg) 100%);
+    }
+    body.intensity-mid {
+      background:
+        radial-gradient(circle at top, rgba(45, 212, 191, 0.16), transparent 38%),
+        linear-gradient(180deg, #0d2031 0%, var(--bg) 100%);
+    }
+    body.intensity-high {
+      background:
+        radial-gradient(circle at top, rgba(45, 191, 160, 0.22), transparent 42%),
+        linear-gradient(180deg, #0d2528 0%, #081420 100%);
+    }
+
+    /* 2. Orb play button */
+    .orb-btn {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      border: 2px solid rgba(45, 212, 191, 0.3);
+      background: radial-gradient(circle at 35% 35%, rgba(45, 212, 191, 0.22), rgba(10, 22, 40, 0.9));
+      color: var(--accent);
+      font-size: 1.6rem;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      transition: all 0.3s ease;
+      box-shadow: 0 0 20px rgba(45, 212, 191, 0.1), inset 0 0 12px rgba(45, 212, 191, 0.05);
+      position: relative;
+      margin: 0 auto;
+    }
+    .orb-btn:hover {
+      border-color: rgba(45, 212, 191, 0.6);
+      box-shadow: 0 0 32px rgba(45, 212, 191, 0.25), inset 0 0 16px rgba(45, 212, 191, 0.1);
+      transform: scale(1.04);
+    }
+    .orb-btn.playing {
+      border-color: rgba(45, 212, 191, 0.7);
+      animation: orb-pulse 2.5s ease-in-out infinite;
+      background: radial-gradient(circle at 35% 35%, rgba(45, 212, 191, 0.35), rgba(10, 22, 40, 0.85));
+    }
+    .orb-btn.dirty {
+      border-color: rgba(255, 200, 50, 0.5);
+      background: radial-gradient(circle at 35% 35%, rgba(255, 200, 50, 0.15), rgba(10, 22, 40, 0.9));
+      color: rgba(255, 220, 100, 0.9);
+    }
+    .orb-btn:disabled {
+      opacity: 0.5;
+      cursor: wait;
+      transform: none;
+      animation: none;
+    }
+    @keyframes orb-pulse {
+      0%, 100% { box-shadow: 0 0 20px rgba(45, 212, 191, 0.2), inset 0 0 12px rgba(45, 212, 191, 0.08); }
+      50% { box-shadow: 0 0 40px rgba(45, 212, 191, 0.45), inset 0 0 20px rgba(45, 212, 191, 0.15); border-color: rgba(45, 212, 191, 0.9); }
+    }
+
+    /* 3. Model card descriptions */
+    .model-card .model-desc {
+      display: block;
+      font-size: 0.62rem;
+      color: rgba(142, 169, 191, 0.6);
+      margin-top: 2px;
+      font-weight: 300;
+    }
+    .model-card.active .model-desc {
+      color: rgba(45, 212, 191, 0.7);
+    }
+
+
     @media (max-width: 520px) {
       .shell {
         padding: 22px;
@@ -572,9 +654,7 @@
     </div>
 
     <section class="controls">
-      <div class="actions">
-        <button id="playBtn" class="action-btn">▶ PLAY</button>
-      </div>
+      <button id="playBtn" class="orb-btn" title="Play / Stop (Space)">▶</button>
 
       <div id="generatingOverlay" class="generating-overlay" style="display:none;">
         <span class="spinner active"></span> Generating first wave...
@@ -650,6 +730,7 @@
     </section>
   </main>
 
+
   <div class="modal-overlay" id="infoModal">
     <div class="modal">
       <button class="modal-close" id="modalClose">&times;</button>
@@ -692,6 +773,14 @@
     const meterBar = document.getElementById('meterBar');
     const waveCanvas = document.getElementById('waveCanvas');
     const waveCtx = waveCanvas.getContext('2d');
+
+    // 3. Model descriptions
+    const modelDescriptions = {
+      'calma': 'gentle shore lapping',
+      'tempesta': 'powerful storm surf',
+      'profondo': 'deep ocean rumble',
+      'onda lunga': 'long rolling swells',
+    };
 
     let selectedDuration = 300;
     let audioContext;
@@ -809,6 +898,13 @@
       const amplitude = layer.idle + layer.boost * level;
       const phase = time * layer.speed + layer.phaseOffset;
 
+      // 7. Responsive waveform color — shifts with intensity
+      const intensity = Number(intensitySlider.value);
+      // Calm: deep blue (100,160,220) → Mid: teal (45,212,191) → Stormy: cyan-white (140,240,220)
+      const r = Math.round(100 + (45 - 100) * Math.min(intensity * 2, 1) + (140 - 45) * Math.max(intensity * 2 - 1, 0));
+      const g = Math.round(160 + (212 - 160) * Math.min(intensity * 2, 1) + (240 - 212) * Math.max(intensity * 2 - 1, 0));
+      const b = Math.round(220 + (191 - 220) * Math.min(intensity * 2, 1) + (220 - 191) * Math.max(intensity * 2 - 1, 0));
+
       waveCtx.beginPath();
       waveCtx.moveTo(0, height + 8);
       for (let x = 0; x <= width; x += 6) {
@@ -819,9 +915,9 @@
       }
       waveCtx.lineTo(width, height + 8);
       waveCtx.closePath();
-      waveCtx.fillStyle = `rgba(45, 212, 191, ${layer.opacity + level * layer.opacityBoost})`;
+      waveCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${layer.opacity + level * layer.opacityBoost})`;
       waveCtx.fill();
-      waveCtx.strokeStyle = `rgba(45, 212, 191, ${Math.min(0.58, layer.opacity + 0.12 + level * 0.16)})`;
+      waveCtx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${Math.min(0.58, layer.opacity + 0.12 + level * 0.16)})`;
       waveCtx.lineWidth = 1.2;
       waveCtx.stroke();
     }
@@ -899,8 +995,8 @@
         stopTimer = null;
       }
       stopAllChunks();
-      playBtn.textContent = '▶ PLAY';
-      playBtn.classList.remove('playing');
+      playBtn.textContent = '▶';
+      playBtn.classList.remove('playing', 'dirty');
       durationSection.classList.remove('dimmed');
       meterBar.style.width = '0%';
       statusSub.textContent = 'idle';
@@ -937,11 +1033,12 @@
       }
     }
 
-    async function fetchAudio(url, payload) {
+    async function fetchAudio(url, payload, signal) {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: signal || undefined
       });
 
       if (!response.ok) {
@@ -1106,8 +1203,9 @@
         masterGain.gain.setValueAtTime(0, now);
         masterGain.gain.linearRampToValueAtTime(Number(volumeSlider.value), now + PLAY_FADE_SECONDS);
 
-        playBtn.textContent = '■ STOP';
+        playBtn.textContent = '■';
         playBtn.classList.add('playing');
+        playBtn.classList.remove('dirty');
         durationSection.classList.add('dimmed');
         statusSub.textContent = 'playing...';
         setStatus(`Playing ${friendlyName(modelSelect.value)} — always evolving...`);
@@ -1131,20 +1229,41 @@
       return match ? match[1] : 'maresono.wav';
     }
 
+    let exportAbortController = null;
+
     async function exportRender() {
       if (!modelSelect.value) {
         setStatus('No model available.');
         return;
       }
 
-      setBusy(true, 'Rendering export...');
+      // If already exporting, cancel it
+      if (exportAbortController) {
+        exportAbortController.abort();
+        exportAbortController = null;
+        exportBtn.textContent = '↓ EXPORT WAV';
+        exportBtn.classList.remove('cancellable');
+        setStatus('Export cancelled.');
+        return;
+      }
+
+      // Estimate render time and warn
+      const durMin = selectedDuration / 60;
+      const estSec = Math.round(selectedDuration * 0.14); // ~0.14s per second of audio at full quality
+      setStatus(`Rendering ${durMin}m export (~${estSec}s)... click cancel to abort`);
+
+      exportAbortController = new AbortController();
+      exportBtn.textContent = '✕ CANCEL';
+      exportBtn.classList.add('cancellable');
+      // Only disable duration buttons during export, keep playback working
+      durationButtons.forEach(b => b.disabled = true);
 
       try {
         const response = await fetchAudio('/api/render', {
           model: modelSelect.value,
           duration: selectedDuration,
           intensity: Number(intensitySlider.value)
-        });
+        }, exportAbortController.signal);
         const blob = await response.blob();
         const fileName = parseFilename(response.headers.get('Content-Disposition'));
         const objectUrl = URL.createObjectURL(blob);
@@ -1157,14 +1276,37 @@
         URL.revokeObjectURL(objectUrl);
         setStatus(`Saved ${fileName}`);
       } catch (error) {
-        setStatus(error.message || 'Export failed.');
+        if (error.name === 'AbortError') {
+          setStatus('Export cancelled.');
+        } else {
+          setStatus(error.message || 'Export failed.');
+        }
       } finally {
-        setBusy(false);
+        exportAbortController = null;
+        exportBtn.textContent = '↓ EXPORT WAV';
+        exportBtn.classList.remove('cancellable');
+        durationButtons.forEach(b => b.disabled = false);
       }
     }
 
     // Wave icons for model cards
-    const modelIcons = ['🌊', '💎', '🌙', '🐚', '🌀', '💠', '🧜', '⚡', '🏔️', '🌊'];
+    const modelIcons = {
+      'calma': '🌊',
+      'tempesta': '⚡',
+      'profondo': '🏔️',
+      'onda lunga': '🌀',
+    };
+    const defaultIcon = '🐚';
+
+    function getModelIcon(name) {
+      const key = friendlyName(name).toLowerCase();
+      return modelIcons[key] || defaultIcon;
+    }
+
+    function getModelDesc(name) {
+      const key = friendlyName(name).toLowerCase();
+      return modelDescriptions[key] || '';
+    }
 
     function selectModelCard(modelValue) {
       modelSelect.value = modelValue;
@@ -1197,11 +1339,12 @@
           option.textContent = friendlyName(model);
           modelSelect.appendChild(option);
 
-          // Visual card
+          // Visual card with description
           const card = document.createElement('button');
           card.className = 'model-card';
           card.dataset.model = model;
-          card.innerHTML = `<span class="model-icon">${modelIcons[i % modelIcons.length]}</span>${friendlyName(model)}`;
+          const desc = getModelDesc(model);
+          card.innerHTML = `<span class="model-icon">${getModelIcon(model)}</span>${friendlyName(model)}${desc ? `<span class="model-desc">${desc}</span>` : ''}`;
           card.addEventListener('click', () => selectModelCard(model));
           modelGrid.appendChild(card);
         });
@@ -1236,19 +1379,30 @@
     function markParamsDirty() {
       const modelChanged = modelSelect.value !== appliedModel;
       const intensityChanged = Math.abs(Number(intensitySlider.value) - appliedIntensity) > 0.005;
-      if (modelChanged || intensityChanged) {
-        if (isPlaying) {
-          playBtn.textContent = '⟳ APPLY';
-          playBtn.classList.remove('playing');
-        } else {
-          playBtn.textContent = '⟳ APPLY';
-        }
+      const dirty = modelChanged || intensityChanged;
+      if (dirty) {
+        playBtn.textContent = '⟳';
+        playBtn.classList.remove('playing');
+        playBtn.classList.add('dirty');
       } else if (isPlaying) {
-        playBtn.textContent = '■ STOP';
+        playBtn.textContent = '■';
         playBtn.classList.add('playing');
+        playBtn.classList.remove('dirty');
       } else {
-        playBtn.textContent = '▶ PLAY';
+        playBtn.textContent = '▶';
+        playBtn.classList.remove('playing', 'dirty');
       }
+      // 1. Update background gradient based on intensity
+      updateBackgroundGradient();
+    }
+
+    // 1. Animated background gradient
+    function updateBackgroundGradient() {
+      const intensity = Number(intensitySlider.value);
+      document.body.classList.remove('intensity-low', 'intensity-mid', 'intensity-high');
+      if (intensity < 0.35) document.body.classList.add('intensity-low');
+      else if (intensity < 0.7) document.body.classList.add('intensity-mid');
+      else document.body.classList.add('intensity-high');
     }
 
     // --- Arc intensity control ---
@@ -1357,6 +1511,42 @@
     infoModal.addEventListener('click', (e) => {
       if (e.target === infoModal) infoModal.classList.remove('visible');
     });
+
+
+    // 5. Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      // Ignore if user is typing in an input
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+      switch (e.code) {
+        case 'Space':
+          e.preventDefault();
+          playBtn.click();
+          break;
+        case 'ArrowLeft':
+          e.preventDefault();
+          updateArc(Math.max(0, Number(intensitySlider.value) - 0.05));
+          markParamsDirty();
+          break;
+        case 'ArrowRight':
+          e.preventDefault();
+          updateArc(Math.min(1, Number(intensitySlider.value) + 0.05));
+          markParamsDirty();
+          break;
+        case 'ArrowUp':
+          e.preventDefault();
+          volumeSlider.value = Math.min(1, Number(volumeSlider.value) + 0.05);
+          updateVolume(true);
+          break;
+        case 'ArrowDown':
+          e.preventDefault();
+          volumeSlider.value = Math.max(0, Number(volumeSlider.value) - 0.05);
+          updateVolume(true);
+          break;
+      }
+    });
+
+    // Initialize background gradient
+    updateBackgroundGradient();
   </script>
 </body>
 </html>
