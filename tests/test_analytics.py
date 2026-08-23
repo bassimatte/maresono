@@ -51,6 +51,8 @@ class AnalyticsTests(unittest.TestCase):
             "export_completed",
             "export_failed",
             "outbound_opened",
+            "related_tool_opened",
+            "portfolio_opened",
         ):
             self.assertIn(f"{event_name}:", self.static_html)
             self.assertRegex(self.static_html, rf"trackUsage\('{event_name}'")
@@ -88,6 +90,30 @@ class AnalyticsTests(unittest.TestCase):
             self.assertIn('data-analytics-destination="portfolio"', html)
             self.assertIn('data-analytics-destination="source"', html)
             self.assertIn("destination: ['portfolio', 'source']", html)
+
+    def test_about_window_links_to_related_tools_without_self_linking(self):
+        for html in (self.static_html, self.docs_html):
+            related_line = re.search(
+                r'<p class="related-tools">(.*?)</p>',
+                html,
+                re.DOTALL,
+            )
+            self.assertIsNotNone(related_line)
+            links = related_line.group(1)
+
+            for tool in ("mantice", "glorb", "campana"):
+                self.assertIn(f'href="https://bassimatte.github.io/{tool}/"', links)
+                self.assertIn(f'data-related-tool="{tool}"', links)
+            self.assertIn('href="https://bassimatte.github.io/"', links)
+            self.assertIn('data-portfolio-link="about"', links)
+            self.assertNotIn("/maresono/", links)
+
+    def test_about_links_use_dedicated_allowlisted_events(self):
+        for html in (self.static_html, self.docs_html):
+            self.assertIn("tool: ['mantice', 'glorb', 'campana']", html)
+            self.assertIn("placement: ['about']", html)
+            self.assertIn("trackUsage('related_tool_opened'", html)
+            self.assertIn("trackUsage('portfolio_opened'", html)
 
 
 if __name__ == "__main__":

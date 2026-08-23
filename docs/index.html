@@ -698,6 +698,23 @@
       font-size: 0.85rem;
       color: var(--text);
     }
+    .modal .related-tools {
+      margin: 10px 0 0;
+      color: rgba(142, 169, 191, 0.72);
+      font-size: 0.76rem;
+      line-height: 1.65;
+    }
+    .modal .related-tools a {
+      color: var(--muted);
+      text-decoration-color: rgba(45, 212, 191, 0.35);
+      text-underline-offset: 3px;
+      transition: color 0.2s, text-decoration-color 0.2s;
+    }
+    .modal .related-tools a:hover,
+    .modal .related-tools a:focus-visible {
+      color: var(--accent);
+      text-decoration-color: var(--accent);
+    }
     .modal-close {
       float: right;
       background: none;
@@ -818,6 +835,7 @@
       <p><strong>Features:</strong> Multi-layer envelopes (slow swells modulating individual waves), three-way spectral crossfade (approaching waves are brighter, receding waves are thinner), perceptual corrections for natural warmth, and generative infinite playback with seamless crossfading between segments.</p>
       <p>The public Maresono website uses <a href="https://umami.is/" target="_blank" rel="noopener" style="color:var(--accent)">Umami</a> for anonymous, aggregate usage statistics. It records playback and export attempts, successful playback, broad listening-duration milestones, completed exports, and coarse failure categories so the project can be improved. Maresono does not send intensity or volume values, filenames, audio, or exact error messages. Analytics is disabled for local installations, repository forks, and the Railway backend.</p>
       <div class="author">Made by <strong>Matteo Bassi</strong></div>
+      <p class="related-tools">More tools by Matteo Bassi: <a href="https://bassimatte.github.io/mantice/" target="_blank" rel="noopener" data-related-tool="mantice">Mantice</a> · <a href="https://bassimatte.github.io/glorb/" target="_blank" rel="noopener" data-related-tool="glorb">Glorb</a> · <a href="https://bassimatte.github.io/campana/" target="_blank" rel="noopener" data-related-tool="campana">Campana</a> · <a href="https://bassimatte.github.io/" target="_blank" rel="noopener" data-portfolio-link="about">All projects</a></p>
     </div>
   </div>
 
@@ -874,6 +892,12 @@
       },
       outbound_opened: {
         destination: ['portfolio', 'source'],
+      },
+      related_tool_opened: {
+        tool: ['mantice', 'glorb', 'campana'],
+      },
+      portfolio_opened: {
+        placement: ['about'],
       },
     });
 
@@ -1828,6 +1852,22 @@
       link.addEventListener('click', () => {
         trackUsage('outbound_opened', {
           destination: link.dataset.analyticsDestination,
+        });
+      });
+    });
+
+    document.querySelectorAll('[data-related-tool]').forEach((link) => {
+      link.addEventListener('click', () => {
+        trackUsage('related_tool_opened', {
+          tool: link.dataset.relatedTool,
+        });
+      });
+    });
+
+    document.querySelectorAll('[data-portfolio-link]').forEach((link) => {
+      link.addEventListener('click', () => {
+        trackUsage('portfolio_opened', {
+          placement: link.dataset.portfolioLink,
         });
       });
     });
