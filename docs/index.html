@@ -1370,9 +1370,9 @@
           modelGrid.appendChild(card);
         });
 
-        // Default to Calma if available
-        const calma = models.find(m => m.toLowerCase().includes('calma'));
-        const defaultModel = calma || models[0];
+        // Default to Onda Lunga if available
+        const ondaLunga = models.find(m => m.toLowerCase().includes('onda lunga'));
+        const defaultModel = ondaLunga || models[0];
         modelSelect.value = defaultModel;
         document.querySelectorAll('.model-card').forEach(c => c.classList.remove('active'));
         const defCard = document.querySelector(`.model-card[data-model="${defaultModel}"]`);
