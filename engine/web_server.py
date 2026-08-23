@@ -215,7 +215,7 @@ def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesI
                 request.model,
                 duration,
                 request.intensity,
-                fast=True,
+                fast=False,
                 synthesizer=session.synthesizer,
             )
             filename = _export_filename(request.model, duration, request.intensity)
@@ -227,7 +227,8 @@ def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesI
             return io.BytesIO(session.cached_wav), filename
 
     # Stateless previews remain supported for older clients and API callers.
-    audio, sr = _render_audio(request.model, duration, request.intensity, fast=preview)
+    # Playback uses the same full-resolution spectral evolution as exports.
+    audio, sr = _render_audio(request.model, duration, request.intensity, fast=False)
     filename = _export_filename(request.model, duration, request.intensity)
 
     if not preview:

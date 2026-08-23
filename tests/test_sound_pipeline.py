@@ -1,4 +1,6 @@
 import unittest
+import wave
+from io import BytesIO
 from pathlib import Path
 from uuid import uuid4
 
@@ -49,6 +51,9 @@ class SoundPipelineTests(unittest.TestCase):
 
         self.assertEqual(first_buffer.getvalue(), retry_buffer.getvalue())
         self.assertNotEqual(first_buffer.getvalue(), second_buffer.getvalue())
+        with wave.open(BytesIO(first_buffer.getvalue()), "rb") as preview_wav:
+            self.assertEqual(preview_wav.getframerate(), 44_100)
+            self.assertEqual(preview_wav.getnchannels(), 2)
 
 
 if __name__ == "__main__":
