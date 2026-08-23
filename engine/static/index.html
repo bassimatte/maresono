@@ -749,9 +749,9 @@
     const STOP_FADE_SECONDS = 1.0;
     const VOLUME_RAMP_SECONDS = 0.1;
 
-    // Auto-detect backend: use Render.com when on GitHub Pages, otherwise same-origin
+    // Use the Railway backend from the static GitHub Pages build; local/server builds stay same-origin.
     const API_BASE = window.location.hostname.includes('github.io')
-      ? 'https://maresono.onrender.com'
+      ? 'https://maresono-production.up.railway.app'
       : '';
 
     const modelSelect = document.getElementById('modelSelect');
