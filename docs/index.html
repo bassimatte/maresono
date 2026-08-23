@@ -464,6 +464,28 @@
       opacity: 1;
     }
 
+    .site-links {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 18px;
+      color: rgba(142, 169, 191, 0.45);
+      font-size: 0.72rem;
+      letter-spacing: 0.02em;
+    }
+
+    .site-links a {
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .site-links a:hover,
+    .site-links a:focus-visible {
+      color: var(--accent);
+    }
+
     .duration-section {
       transition: opacity 0.4s ease, max-height 0.4s ease;
     }
@@ -777,6 +799,12 @@
         </div>
       </div>
     </section>
+
+    <nav class="site-links" aria-label="Maresono project links">
+      <a href="https://bassimatte.github.io/" data-analytics-destination="portfolio">More instruments</a>
+      <span aria-hidden="true">·</span>
+      <a href="https://github.com/bassimatte/maresono" target="_blank" rel="noopener" data-analytics-destination="source">Source code <span aria-hidden="true">↗</span></a>
+    </nav>
   </main>
 
 
@@ -843,6 +871,9 @@
         reason: ['network', 'server', 'timeout', 'unknown'],
         preset: MARESONO_PRESETS,
         duration: MARESONO_EXPORT_DURATIONS,
+      },
+      outbound_opened: {
+        destination: ['portfolio', 'source'],
       },
     });
 
@@ -1791,6 +1822,14 @@
     });
     infoModal.addEventListener('click', (e) => {
       if (e.target === infoModal) infoModal.classList.remove('visible');
+    });
+
+    document.querySelectorAll('[data-analytics-destination]').forEach((link) => {
+      link.addEventListener('click', () => {
+        trackUsage('outbound_opened', {
+          destination: link.dataset.analyticsDestination,
+        });
+      });
     });
 
 

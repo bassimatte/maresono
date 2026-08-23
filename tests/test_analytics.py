@@ -50,6 +50,7 @@ class AnalyticsTests(unittest.TestCase):
             "export_started",
             "export_completed",
             "export_failed",
+            "outbound_opened",
         ):
             self.assertIn(f"{event_name}:", self.static_html)
             self.assertRegex(self.static_html, rf"trackUsage\('{event_name}'")
@@ -79,6 +80,14 @@ class AnalyticsTests(unittest.TestCase):
             self.assertIn("anonymous, aggregate usage statistics", html)
             self.assertIn("Maresono does not send intensity or volume values", html)
             self.assertIn("Analytics is disabled for local installations", html)
+
+    def test_reciprocal_links_are_visible_and_tracked(self):
+        for html in (self.static_html, self.docs_html):
+            self.assertIn('href="https://bassimatte.github.io/"', html)
+            self.assertIn('href="https://github.com/bassimatte/maresono"', html)
+            self.assertIn('data-analytics-destination="portfolio"', html)
+            self.assertIn('data-analytics-destination="source"', html)
+            self.assertIn("destination: ['portfolio', 'source']", html)
 
 
 if __name__ == "__main__":
