@@ -813,9 +813,11 @@
       if (iosKeepAliveTimer) { clearInterval(iosKeepAliveTimer); iosKeepAliveTimer = null; }
     }
     let lastFrameTime = 0;
-    let precachedBuffer = null;
+    let precachedPreview = null;
     let precaching = false;
     let paramChanged = false;
+    let playbackSessionId = null;
+    let nextChunkIndex = 0;
     const activeChunks = new Set();
 
     const friendlyName = (fileName) => fileName
@@ -1078,12 +1080,33 @@
 
     const STREAM_CHUNK_SECONDS = 25; // chunk length for continuous playback
 
-    async function fetchChunk(shortDuration = null) {
-      const payload = {
+    function createPreviewSessionId() {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+      return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    }
+
+    function reserveNextChunk(shortDuration = null) {
+      const request = {
+        sessionId: playbackSessionId,
+        chunkIndex: nextChunkIndex,
+        shortDuration,
         model: modelSelect.value,
+        intensity: Number(intensitySlider.value)
+      };
+      nextChunkIndex += 1;
+      return request;
+    }
+
+    async function fetchChunk(request) {
+      const payload = {
+        model: request.model,
         duration: selectedDuration,
-        intensity: Number(intensitySlider.value),
-        preview_duration: shortDuration || STREAM_CHUNK_SECONDS
+        intensity: request.intensity,
+        preview_duration: request.shortDuration || STREAM_CHUNK_SECONDS,
+        session_id: request.sessionId,
+        chunk_index: request.chunkIndex
       };
       const response = await fetchAudio(`${API_BASE}/api/preview`, payload);
       const blob = await response.blob();
@@ -1124,15 +1147,12 @@
       let buffer = initialBuffer;
       let startTime = audioContext.currentTime + 0.05;
       startIOSKeepAlive();
-      // Immediately start fetching the NEXT chunk (eager pre-fetch)
-      let nextBufferPromise = fetchChunk();
+      let nextRequest = reserveNextChunk();
+      let nextBufferPromise = fetchChunk(nextRequest);
 
       while (isPlaying && token === playbackToken) {
         const scheduled = scheduleChunk(buffer, startTime, token);
         const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime - scheduled.fade);
-
-        // Start fetching chunk after next (always stay 1 chunk ahead)
-        const afterNextPromise = fetchChunk();
 
         // Wait for the already-fetching next chunk
         let nextBuffer = null;
@@ -1140,18 +1160,22 @@
           nextBuffer = await nextBufferPromise;
         } catch (error) {
           if (!isPlaying || token !== playbackToken) break;
-          // Retry once
+          // Retry the same chunk index so the backend can return its cached result.
           try {
-            nextBuffer = await fetchChunk();
+            nextBuffer = await fetchChunk(nextRequest);
           } catch (e2) {
             if (!isPlaying || token !== playbackToken) break;
             setStatus(e2.message || 'Generating next wave...');
             await sleep(500);
-            nextBuffer = await fetchChunk();
+            nextBuffer = await fetchChunk(nextRequest);
           }
         }
 
         if (!isPlaying || token !== playbackToken || !nextBuffer) break;
+
+        // Keep exactly one ordered request ahead of playback.
+        const afterNextRequest = reserveNextChunk();
+        const afterNextPromise = fetchChunk(afterNextRequest);
 
         // Wait until it's almost time to play the next chunk
         const now = audioContext.currentTime;
@@ -1170,7 +1194,8 @@
 
         startTime = nextStart;
         buffer = nextBuffer;
-        nextBufferPromise = afterNextPromise; // Use the pre-fetched promise
+        nextRequest = afterNextRequest;
+        nextBufferPromise = afterNextPromise;
       }
     }
 
@@ -1200,14 +1225,24 @@
 
       try {
         await ensureAudioGraph();
-        // Use pre-cached buffer if available, otherwise fetch a short starter chunk
+        const requestedModel = modelSelect.value;
+        const requestedIntensity = Number(intensitySlider.value);
+        const cachedMatches = precachedPreview
+          && precachedPreview.model === requestedModel
+          && Math.abs(precachedPreview.intensity - requestedIntensity) <= 0.005;
+
+        // Continue the pre-cached session when its parameters still match.
         let decoded;
-        if (precachedBuffer) {
-          decoded = precachedBuffer;
-          precachedBuffer = null;
+        if (cachedMatches) {
+          decoded = precachedPreview.buffer;
+          playbackSessionId = precachedPreview.sessionId;
+          nextChunkIndex = 1;
         } else {
-          decoded = await fetchChunk(15);  // 15s chunk for fast start with buffer
+          playbackSessionId = createPreviewSessionId();
+          nextChunkIndex = 0;
+          decoded = await fetchChunk(reserveNextChunk(15));
         }
+        precachedPreview = null;
         const token = playbackToken + 1;
         playbackToken = token;
         isPlaying = true;
@@ -1514,8 +1549,12 @@
       // Pre-cache a short starter chunk once models are loaded
       if (modelSelect.value) {
         precaching = true;
-        ensureAudioGraph().then(() => fetchChunk(15)).then((buf) => {
-          precachedBuffer = buf;
+        const model = modelSelect.value;
+        const intensity = Number(intensitySlider.value);
+        const sessionId = createPreviewSessionId();
+        const request = { sessionId, chunkIndex: 0, shortDuration: 15, model, intensity };
+        ensureAudioGraph().then(() => fetchChunk(request)).then((buf) => {
+          precachedPreview = { buffer: buf, sessionId, model, intensity };
           precaching = false;
         }).catch(() => { precaching = false; });
       }

@@ -182,8 +182,12 @@ class SpectralSynthesizer:
     - Micro-texture (sphere grain simulation)
     """
 
-    def __init__(self, model: SpectralModel):
+    def __init__(self, model: SpectralModel, seed: int = None):
         self.model = model
+        # One evolving generator feeds every layer. Keeping the synthesizer alive
+        # across preview requests makes successive chunks part of one stream while
+        # an explicit seed still allows reproducible offline comparisons.
+        self._rng = np.random.default_rng(seed)
         self._last_wave_phase = None  # filled by _generate_multilayer_envelope
 
     def synthesize(self, duration: float, sr: int = None,
@@ -232,13 +236,13 @@ class SpectralSynthesizer:
                                             quiet_fir if not fast else blended_fir,
                                             bright_fir if not fast else blended_fir,
                                             wash_fir if not fast else blended_fir,
-                                            seed_offset=0, time_offset=0.0,
+                                            time_offset=0.0,
                                             intensity=intensity, fast=fast)
             far_right = self._render_channel(n_samples, render_sr,
                                              quiet_fir if not fast else blended_fir,
                                              bright_fir if not fast else blended_fir,
                                              wash_fir if not fast else blended_fir,
-                                             seed_offset=77, time_offset=3.5,
+                                             time_offset=3.5,
                                              intensity=intensity, fast=fast)
 
             # Spatial panning for far layer — waves sweep L↔R
@@ -250,11 +254,11 @@ class SpectralSynthesizer:
             near_left = self._render_near_layer(n_samples, render_sr,
                                                 bright_fir if not fast else blended_fir,
                                                 wash_fir if not fast else blended_fir,
-                                                seed_offset=200, intensity=intensity, fast=fast)
+                                                intensity=intensity, fast=fast)
             near_right = self._render_near_layer(n_samples, render_sr,
                                                  bright_fir if not fast else blended_fir,
                                                  wash_fir if not fast else blended_fir,
-                                                 seed_offset=311, intensity=intensity, fast=fast)
+                                                 intensity=intensity, fast=fast)
 
             # Near layer panning — narrower, more centered
             near_pan = self._generate_spatial_pan(n_samples, render_sr, intensity, layer='near')
@@ -272,33 +276,28 @@ class SpectralSynthesizer:
             left = far_l * far_gain + near_l * near_gain + shore_l * shore_gain
             right = far_r * far_gain + near_r * near_gain + shore_r * shore_gain
 
-            peak = max(np.max(np.abs(left)), np.max(np.abs(right)))
-            if peak > 0:
-                target_peak = np.interp(intensity, [0.0, 0.5, 1.0], [0.55, 0.9, 0.98])
-                left = left / peak * target_peak
-                right = right / peak * target_peak
             audio = np.stack([left, right], axis=-1)
         else:
             audio = self._render_channel(n_samples, render_sr,
                                          quiet_fir if not fast else blended_fir,
                                          bright_fir if not fast else blended_fir,
                                          wash_fir if not fast else blended_fir,
-                                         seed_offset=0, time_offset=0.0,
+                                         time_offset=0.0,
                                          intensity=intensity, fast=fast)
 
+        audio = self._master_output(audio, intensity)
         return audio.astype(np.float32)
 
     def _render_channel(self, n_samples: int, sr: int,
                         quiet_fir: np.ndarray, bright_fir: np.ndarray,
                         wash_fir: np.ndarray,
-                        seed_offset: int = 0, time_offset: float = 0.0,
+                        time_offset: float = 0.0,
                         intensity: float = 0.5, fast: bool = False) -> np.ndarray:
         """Render a single channel of audio."""
         from scipy.signal import fftconvolve
 
-        # Different noise per channel
-        rng = np.random.default_rng(seed=None if seed_offset == 0 else seed_offset + int(n_samples))
-        noise = rng.standard_normal(n_samples)
+        # Draw from the session RNG so equal-length chunks never reuse a texture.
+        noise = self._rng.standard_normal(n_samples)
 
         # Generate multi-layer envelope
         amp_envelope = self._generate_multilayer_envelope(
@@ -371,13 +370,51 @@ class SpectralSynthesizer:
             grain = self._generate_micro_texture(n_samples, sr)
             audio = audio * grain
 
-        # Normalize while preserving the intended intensity range
-        peak = np.max(np.abs(audio))
-        if peak > 0:
-            target_peak = np.interp(intensity, [0.0, 0.5, 1.0], [0.55, 0.9, 0.98])
-            audio = audio / peak * target_peak
-
         return audio
+
+    @staticmethod
+    def _rms(signal: np.ndarray) -> float:
+        return float(np.sqrt(np.mean(np.square(signal), dtype=np.float64)))
+
+    @classmethod
+    def _scale_to_rms(cls, signal: np.ndarray, target_rms: float) -> np.ndarray:
+        current_rms = cls._rms(signal)
+        if current_rms <= 1e-10:
+            return signal
+        return signal * (target_rms / current_rms)
+
+    @classmethod
+    def _master_output(cls, audio: np.ndarray, intensity: float) -> np.ndarray:
+        """Apply stable loudness calibration and a transparent soft ceiling."""
+        # Volume is a separate UI control, so intensity primarily changes motion,
+        # density and spectrum. A narrow RMS range avoids chunk-to-chunk pumping.
+        target_rms = float(np.interp(intensity, [0.0, 1.0], [0.10, 0.12]))
+        current_rms = cls._rms(audio)
+        if current_rms > 1e-10:
+            correction = np.clip(target_rms / current_rms, 0.05, 3.0)
+            audio = audio * correction
+
+        # Leave normal samples untouched and round only peaks into a 0.98 ceiling.
+        threshold = 0.82
+        ceiling = 0.98
+        magnitude = np.abs(audio)
+        over = magnitude > threshold
+        if np.any(over):
+            span = ceiling - threshold
+            limited = threshold + span * np.tanh((magnitude[over] - threshold) / span)
+            audio = audio.copy()
+            audio[over] = np.sign(audio[over]) * limited
+        return audio
+
+    def _model_period_scale(self) -> float:
+        """Map the learned amplitude period onto safe synthesis timing bounds."""
+        learned_period = float(self.model.amp_stats.get('period_seconds', 2.5))
+        if not np.isfinite(learned_period):
+            learned_period = 2.5
+        # Values around one second are commonly the detector's lower-bound result;
+        # keep them usable without turning the drum into rapid-fire noise.
+        learned_period = float(np.clip(learned_period, 1.5, 6.0))
+        return float(np.clip(learned_period / 2.5, 0.65, 2.4))
 
     def _build_wash_fir(self, sr: int, order: int) -> np.ndarray:
         """
@@ -445,11 +482,11 @@ class SpectralSynthesizer:
         ctrl_rate = 10  # Hz
         n_ctrl = max(4, int(n_samples / sr * ctrl_rate))
 
-        rng = np.random.default_rng()
+        rng = self._rng
 
         if layer == 'far':
             # Slow sweeps correlated with wave groups — period 6-15s
-            n_sweeps = max(2, int(n_samples / sr / np.random.uniform(6, 12)))
+            n_sweeps = max(2, int(n_samples / sr / rng.uniform(6, 12)))
             # Random target positions per sweep
             targets = rng.uniform(0.15, 0.85, n_sweeps + 1)
             # Interpolate smoothly between targets
@@ -473,7 +510,6 @@ class SpectralSynthesizer:
 
     def _render_near_layer(self, n_samples: int, sr: int,
                            bright_fir: np.ndarray, wash_fir: np.ndarray,
-                           seed_offset: int = 200,
                            intensity: float = 0.5, fast: bool = False) -> np.ndarray:
         """
         Render the 'near' layer — small intimate waves lapping at your feet.
@@ -486,8 +522,7 @@ class SpectralSynthesizer:
         """
         from scipy.signal import fftconvolve
 
-        rng = np.random.default_rng(seed=seed_offset + int(n_samples * 0.37))
-        noise = rng.standard_normal(n_samples)
+        noise = self._rng.standard_normal(n_samples)
 
         # Generate near-wave envelope with faster, smaller waves
         near_env = self._generate_near_envelope(n_samples / sr, sr, intensity)
@@ -506,12 +541,6 @@ class SpectralSynthesizer:
                 audio = bright_stream
             audio = audio * near_env
 
-        # Normalize
-        peak = np.max(np.abs(audio))
-        if peak > 0:
-            target = np.interp(intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.85])
-            audio = audio / peak * target
-
         return audio
 
     def _generate_near_envelope(self, duration: float, sr: int,
@@ -527,16 +556,17 @@ class SpectralSynthesizer:
         envelope = np.zeros(n_points)
 
         # Near wave timing: shorter periods, more regular
-        min_period = np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 2.2, 1.5])
-        max_period = np.interp(intensity, [0.0, 0.5, 1.0], [5.0, 4.0, 3.0])
+        period_scale = np.sqrt(self._model_period_scale())
+        min_period = np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 2.2, 1.5]) * period_scale
+        max_period = np.interp(intensity, [0.0, 0.5, 1.0], [5.0, 4.0, 3.0]) * period_scale
 
-        current_time = np.random.uniform(0.3, 1.5)
+        current_time = self._rng.uniform(0.3, 1.5)
         while current_time < duration - 0.5:
-            period = np.random.uniform(min_period, max_period)
-            amp = np.random.uniform(0.3, 0.7)
+            period = self._rng.uniform(min_period, max_period)
+            amp = self._rng.uniform(0.3, 0.7)
 
             # Gentler shape: symmetric-ish, like water lapping
-            rise_frac = np.random.uniform(0.35, 0.50)
+            rise_frac = self._rng.uniform(0.35, 0.50)
             active_dur = period * 0.7  # shorter active portion
 
             i_start = int(current_time / dt)
@@ -557,7 +587,7 @@ class SpectralSynthesizer:
                     envelope[i_start:end_idx], wave_shape[:end_idx - i_start])
 
             # Short pause between lapping waves
-            pause = np.random.uniform(0.2, 0.8)
+            pause = self._rng.uniform(0.2, 0.8)
             current_time += active_dur + pause
 
         # Add ambient floor (near water is always present)
@@ -628,10 +658,8 @@ class SpectralSynthesizer:
             shore_trigger = shore_trigger / peak_trigger
 
         # Generate shore noise — band-limited 800Hz-8kHz (sand/foam character)
-        rng_l = np.random.default_rng(seed=42)
-        rng_r = np.random.default_rng(seed=99)
-        noise_l = rng_l.standard_normal(n_samples)
-        noise_r = rng_r.standard_normal(n_samples)
+        noise_l = self._rng.standard_normal(n_samples)
+        noise_r = self._rng.standard_normal(n_samples)
 
         # Bandpass for shore character
         low_cut = min(800.0 / nyq, 0.95)
@@ -648,12 +676,9 @@ class SpectralSynthesizer:
         shore_l = shore_noise_l * shore_trigger
         shore_r = shore_noise_r * shore_trigger
 
-        # Normalize
-        max_val = max(np.max(np.abs(shore_l)), np.max(np.abs(shore_r)))
-        if max_val > 0:
-            target = np.interp(intensity, [0.0, 0.5, 1.0], [0.5, 0.75, 0.95])
-            shore_l = shore_l / max_val * target
-            shore_r = shore_r / max_val * target
+        shore_level = np.interp(intensity, [0.0, 0.5, 1.0], [0.18, 0.24, 0.30])
+        shore_l *= shore_level
+        shore_r *= shore_level
 
         return shore_l, shore_r
 
@@ -661,7 +686,7 @@ class SpectralSynthesizer:
         """Subtle 5-20 Hz amplitude flicker simulating sphere contacts."""
         from scipy.signal import butter, sosfilt
 
-        mod_noise = np.random.randn(n_samples)
+        mod_noise = self._rng.standard_normal(n_samples)
         nyq = sr / 2
         sos = butter(2, [5.0 / nyq, 20.0 / nyq], btype='band', output='sos')
         grain_signal = sosfilt(sos, mod_noise)
@@ -686,7 +711,7 @@ class SpectralSynthesizer:
             return np.zeros(n_samples)
 
         # Generate bass noise source
-        noise = np.random.randn(n_samples)
+        noise = self._rng.standard_normal(n_samples)
 
         # Bandpass 20-80 Hz
         low = max(20.0 / nyq, 0.001)
@@ -698,13 +723,13 @@ class SpectralSynthesizer:
         # Slow envelope with its own random period (8-20s)
         control_rate = 10  # Hz
         n_ctrl = max(4, int(n_samples / sr * control_rate))
-        period = np.random.uniform(8.0, 20.0)
+        period = self._rng.uniform(8.0, 20.0)
         t_ctrl = np.linspace(0, n_samples / sr, n_ctrl)
         # Random phase so each chunk is different
-        phase = np.random.uniform(0, 2 * np.pi)
+        phase = self._rng.uniform(0, 2 * np.pi)
         undertow_env = 0.5 + 0.5 * np.sin(2 * np.pi * t_ctrl / period + phase)
         # Add some randomness
-        undertow_env *= (0.7 + 0.3 * np.random.rand(n_ctrl))
+        undertow_env *= (0.7 + 0.3 * self._rng.random(n_ctrl))
         # Interpolate to sample rate
         t_samples = np.linspace(0, n_samples / sr, n_samples)
         undertow_env_full = np.interp(t_samples, t_ctrl, undertow_env)
@@ -726,10 +751,9 @@ class SpectralSynthesizer:
         # Apply envelope to bass noise
         rumble = bass_noise * combined_env
 
-        # Scale by intensity — more intensity = more rumble
-        # At intensity 0: very subtle (0.04), at 1.0: prominent (0.18)
-        rumble_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.04, 0.10, 0.18])
-        rumble = rumble / (np.max(np.abs(rumble)) + 1e-10) * rumble_gain
+        # Calibrate rumble energy rather than forcing every chunk to the same peak.
+        rumble_rms = np.interp(intensity, [0.0, 0.5, 1.0], [0.006, 0.014, 0.025])
+        rumble = self._scale_to_rms(rumble, rumble_rms)
 
         return rumble
 
@@ -747,7 +771,7 @@ class SpectralSynthesizer:
         Each bubble = damped sinusoid. Density follows the amplitude envelope
         (more bubbles during wave crashes, fewer during calm).
         """
-        rng = np.random.default_rng()
+        rng = self._rng
         output = np.zeros(n_samples)
 
         # Bubble event density (events per second) scales with intensity
@@ -815,12 +839,9 @@ class SpectralSynthesizer:
                 
                 output[onset:onset + bubble_samples] += bubble * amp
 
-        # Normalize and scale
-        peak = np.max(np.abs(output))
-        if peak > 0:
-            # Bubble layer gain: subtle at calm, more present at stormy
-            bubble_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.02, 0.06, 0.12])
-            output = output / peak * bubble_gain
+        # Fixed gain preserves natural event-density variation between chunks.
+        bubble_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.003, 0.008, 0.016])
+        output *= bubble_gain
 
         return output
 
@@ -878,15 +899,17 @@ class SpectralSynthesizer:
         # --- Layer 1: Slow swell (wave groups / sets) ---
         t = np.linspace(0, duration, n_points, endpoint=False)
         swell = np.zeros(n_points)
+        period_scale = self._model_period_scale()
         n_swell_layers = int(round(np.interp(intensity, [0.0, 0.5, 1.0], [2.0, 3.0, 4.0])))
-        swell_min_period = np.interp(intensity, [0.0, 0.5, 1.0], [10.0, 8.0, 6.0])
-        swell_max_period = np.interp(intensity, [0.0, 0.5, 1.0], [18.0, 15.0, 11.0])
+        swell_period_scale = np.sqrt(period_scale)
+        swell_min_period = np.interp(intensity, [0.0, 0.5, 1.0], [10.0, 8.0, 6.0]) * swell_period_scale
+        swell_max_period = np.interp(intensity, [0.0, 0.5, 1.0], [18.0, 15.0, 11.0]) * swell_period_scale
         swell_floor = np.interp(intensity, [0.0, 0.5, 1.0], [0.16, 0.3, 0.42])
         swell_depth = np.interp(intensity, [0.0, 0.5, 1.0], [0.42, 0.7, 0.9])
         for _ in range(n_swell_layers):
-            swell_period = np.random.uniform(swell_min_period, swell_max_period)
-            swell_phase = np.random.uniform(0, 2 * np.pi) + time_offset * 2 * np.pi / swell_period
-            swell_amp = np.random.uniform(0.22, np.interp(intensity, [0.0, 0.5, 1.0], [0.45, 0.6, 0.85]))
+            swell_period = self._rng.uniform(swell_min_period, swell_max_period)
+            swell_phase = self._rng.uniform(0, 2 * np.pi) + time_offset * 2 * np.pi / swell_period
+            swell_amp = self._rng.uniform(0.22, np.interp(intensity, [0.0, 0.5, 1.0], [0.45, 0.6, 0.85]))
             swell += swell_amp * (0.5 + 0.5 * np.sin(2 * np.pi * t / swell_period + swell_phase))
 
         swell = swell / (np.max(swell) + 1e-10)
@@ -899,12 +922,14 @@ class SpectralSynthesizer:
         wave_phase = np.zeros(n_points)  # 0=silence, rising=approach, 1=peak/break, falling=foam/recede
 
         # Wave timing parameters
-        min_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [4.0, 3.0, 2.0])
-        max_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [8.0, 6.0, 4.5])
+        min_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [4.0, 3.0, 2.0]) * period_scale
+        max_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [8.0, 6.0, 4.5]) * period_scale
         # Rayleigh scale parameter (significant wave height proxy)
-        rayleigh_scale = np.interp(intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.95])
+        learned_variation = stats.get('std', 0.2) / max(stats.get('mean', 0.4), 0.05)
+        variation_scale = np.clip(learned_variation / 0.5, 0.75, 1.25)
+        rayleigh_scale = np.interp(intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.95]) * variation_scale
 
-        current_time = np.random.uniform(0.2, 1.0)
+        current_time = self._rng.uniform(0.2, 1.0)
         group_size = 0  # waves remaining in current group
         group_position = 0  # position within group (0-indexed)
         group_total = 0  # total waves in current group
@@ -913,12 +938,12 @@ class SpectralSynthesizer:
         while current_time < duration - 1.0:
             # Start new group if needed
             if group_size <= 0:
-                group_total = np.random.randint(3, 8)  # 3-7 waves per set
+                group_total = self._rng.integers(3, 8)  # 3-7 waves per set
                 group_size = group_total
                 group_position = 0
 
             # Rayleigh-distributed height (ocean wave height statistics)
-            raw_height = np.random.rayleigh(rayleigh_scale)
+            raw_height = self._rng.rayleigh(rayleigh_scale)
             wave_amp = np.clip(raw_height, 0.15, 1.4)
 
             # Group modulation: middle waves in a set are ~30% larger
@@ -929,12 +954,12 @@ class SpectralSynthesizer:
             wave_amp *= group_factor
 
             # Wave duration: larger waves last longer (physics: T ∝ √H)
-            base_period = np.random.uniform(min_wave_period, max_wave_period)
+            base_period = self._rng.uniform(min_wave_period, max_wave_period)
             active_dur = base_period * (0.8 + 0.4 * (wave_amp / 1.4))
 
             # Asymmetric shape: fast rise (25-40%), slow decay (60-75%)
             # Stormy waves rise faster (more abrupt breaking)
-            rise_frac = np.random.uniform(
+            rise_frac = self._rng.uniform(
                 np.interp(intensity, [0.0, 1.0], [0.30, 0.20]),
                 np.interp(intensity, [0.0, 1.0], [0.42, 0.35])
             )
@@ -976,11 +1001,11 @@ class SpectralSynthesizer:
 
             if group_size <= 0:
                 # Between groups: longer pause with some randomness
-                pause = np.random.uniform(inter_group_pause * 0.7, inter_group_pause * 1.5)
+                pause = self._rng.uniform(inter_group_pause * 0.7, inter_group_pause * 1.5)
             else:
                 # Within group: regular spacing with slight jitter
                 base_pause = np.interp(intensity, [0.0, 0.5, 1.0], [1.0, 0.5, 0.15])
-                pause = np.random.uniform(base_pause * 0.6, base_pause * 1.4)
+                pause = self._rng.uniform(base_pause * 0.6, base_pause * 1.4)
 
             current_time += active_dur + pause
 

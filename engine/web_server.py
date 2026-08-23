@@ -5,9 +5,11 @@ import io
 import os
 import re
 import threading
+import time
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 import soundfile as sf
 
@@ -33,6 +35,8 @@ _INDEX_FILE = _STATIC_DIR / "index.html"
 _EXPORTS_DIR = _REPO_DIR / "exports"
 _DEFAULT_MODELS_DIR = _REPO_DIR / "models"
 _PREVIEW_SECONDS = 30.0
+_PREVIEW_SESSION_TTL = 15 * 60.0
+_MAX_PREVIEW_SESSIONS = 32
 
 _EXPORTS_DIR.mkdir(exist_ok=True)
 
@@ -50,7 +54,26 @@ class RenderRequest(BaseModel):
     model: str
     duration: float = Field(default=60.0, gt=0)
     intensity: float = Field(default=0.5, ge=0.0, le=1.0)
-    preview_duration: float | None = Field(default=None, gt=0)
+    preview_duration: Optional[float] = Field(default=None, gt=0)
+    session_id: Optional[str] = Field(default=None, min_length=1, max_length=64)
+    chunk_index: Optional[int] = Field(default=None, ge=0)
+
+
+class _PreviewSession:
+    def __init__(self, model_name: str, intensity: float, model: SpectralModel):
+        self.model_name = model_name
+        self.intensity = intensity
+        self.synthesizer = SpectralSynthesizer(model)
+        self.lock = threading.Lock()
+        self.last_used = time.monotonic()
+        self.last_chunk_index = -1
+        self.cached_key = None
+        self.cached_wav = None
+        self.cached_filename = None
+
+
+_preview_sessions: dict[str, _PreviewSession] = {}
+_preview_sessions_lock = threading.Lock()
 
 
 def _slugify(value: str) -> str:
@@ -94,9 +117,11 @@ def _load_learned_model(filename: str):
     return _load_learned_model_from_path(str(path))
 
 
-def _render_audio(filename: str, duration: float, intensity: float, fast: bool = False):
-    model = _load_learned_model(filename)
-    synthesizer = SpectralSynthesizer(model)
+def _render_audio(filename: str, duration: float, intensity: float, fast: bool = False,
+                  synthesizer: SpectralSynthesizer = None):
+    if synthesizer is None:
+        model = _load_learned_model(filename)
+        synthesizer = SpectralSynthesizer(model)
     sr = 22050 if fast else config.SAMPLE_RATE
     audio = synthesizer.synthesize(
         duration=duration,
@@ -106,6 +131,45 @@ def _render_audio(filename: str, duration: float, intensity: float, fast: bool =
         fast=fast,
     )
     return audio, sr
+
+
+def _get_preview_session(request: RenderRequest) -> _PreviewSession:
+    session_id = request.session_id or ''
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id):
+        raise HTTPException(status_code=400, detail="Invalid preview session ID.")
+
+    now = time.monotonic()
+    with _preview_sessions_lock:
+        expired = [
+            key for key, session in _preview_sessions.items()
+            if now - session.last_used > _PREVIEW_SESSION_TTL
+        ]
+        for key in expired:
+            _preview_sessions.pop(key, None)
+
+        session = _preview_sessions.get(session_id)
+        if session is not None:
+            same_model = session.model_name == request.model
+            same_intensity = abs(session.intensity - request.intensity) <= 1e-6
+            if not same_model or not same_intensity:
+                session = None
+
+        if session is None:
+            while len(_preview_sessions) >= _MAX_PREVIEW_SESSIONS:
+                oldest_key = min(
+                    _preview_sessions,
+                    key=lambda key: _preview_sessions[key].last_used,
+                )
+                _preview_sessions.pop(oldest_key, None)
+            session = _PreviewSession(
+                request.model,
+                request.intensity,
+                _load_learned_model(request.model),
+            )
+            _preview_sessions[session_id] = session
+
+        session.last_used = now
+        return session
 
 
 def _audio_to_wav_buffer(audio, sr: int = None) -> io.BytesIO:
@@ -131,7 +195,38 @@ def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesI
     # Allow client to request shorter preview (for quick-start first chunk)
     if preview and hasattr(request, 'preview_duration') and request.preview_duration:
         duration = min(request.preview_duration, _PREVIEW_SECONDS)
-    # Preview uses fast mode (22050 Hz, single FIR) for speed
+    if preview and request.session_id:
+        session = _get_preview_session(request)
+        chunk_index = request.chunk_index
+        with session.lock:
+            session.last_used = time.monotonic()
+            if chunk_index is None:
+                chunk_index = session.last_chunk_index + 1
+            cache_key = (chunk_index, duration, request.model, request.intensity)
+            if cache_key == session.cached_key and session.cached_wav is not None:
+                return io.BytesIO(session.cached_wav), session.cached_filename
+            if chunk_index != session.last_chunk_index + 1:
+                raise HTTPException(
+                    status_code=409,
+                    detail="Preview chunks must be requested in sequence.",
+                )
+
+            audio, sr = _render_audio(
+                request.model,
+                duration,
+                request.intensity,
+                fast=True,
+                synthesizer=session.synthesizer,
+            )
+            filename = _export_filename(request.model, duration, request.intensity)
+            buffer = _audio_to_wav_buffer(audio, sr)
+            session.last_chunk_index = chunk_index
+            session.cached_key = cache_key
+            session.cached_wav = buffer.getvalue()
+            session.cached_filename = filename
+            return io.BytesIO(session.cached_wav), filename
+
+    # Stateless previews remain supported for older clients and API callers.
     audio, sr = _render_audio(request.model, duration, request.intensity, fast=preview)
     filename = _export_filename(request.model, duration, request.intensity)
 
