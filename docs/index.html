@@ -3,8 +3,47 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Maresono</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><path d='M2 20 C8 14, 12 26, 16 20 S24 14, 30 20' fill='none' stroke='%232dd4bf' stroke-width='3' stroke-linecap='round'/></svg>" />
+  <title>Maresono — Generative Ocean Sound Synthesizer</title>
+  <meta name="description" content="Create infinite, non-looping ocean soundscapes in your browser with Maresono, a generative synthesizer trained on real handcrafted ocean drums." />
+  <meta name="author" content="Matteo Bassi" />
+  <meta name="robots" content="index, follow" />
+  <meta name="theme-color" content="#0a1628" />
+  <link rel="canonical" href="https://bassimatte.github.io/maresono/" />
+  <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg" />
+  <meta property="og:type" content="website" />
+  <meta property="og:site_name" content="Maresono" />
+  <meta property="og:title" content="Maresono — Generative Ocean Sound Synthesizer" />
+  <meta property="og:description" content="Create infinite, non-looping ocean soundscapes from real handcrafted ocean drums." />
+  <meta property="og:url" content="https://bassimatte.github.io/maresono/" />
+  <meta property="og:locale" content="en_US" />
+  <meta name="twitter:card" content="summary" />
+  <meta name="twitter:title" content="Maresono — Generative Ocean Sound Synthesizer" />
+  <meta name="twitter:description" content="Create infinite, non-looping ocean soundscapes from real handcrafted ocean drums." />
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Maresono",
+    "url": "https://bassimatte.github.io/maresono/",
+    "description": "A generative ocean sound synthesizer trained on real handcrafted ocean drums, creating infinite, non-looping soundscapes in the browser.",
+    "applicationCategory": "MultimediaApplication",
+    "applicationSubCategory": "Generative audio synthesizer",
+    "operatingSystem": "Any",
+    "browserRequirements": "Requires JavaScript and the Web Audio API",
+    "isAccessibleForFree": true,
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "EUR"
+    },
+    "creator": {
+      "@type": "Person",
+      "name": "Matteo Bassi",
+      "url": "https://bassimatte.github.io/"
+    },
+    "sameAs": "https://github.com/bassimatte/maresono"
+  }
+  </script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,400;0,500;0,600;0,700;1,300&display=swap" rel="stylesheet" />
@@ -60,12 +99,21 @@
     }
 
     .subtitle {
-      margin: 8px 0 24px;
+      margin: 8px 0 6px;
       text-align: center;
       color: var(--muted);
       font-size: 0.95rem;
       font-weight: 300;
       font-style: italic;
+    }
+
+    .product-intro {
+      max-width: 390px;
+      margin: 0 auto 24px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.5;
+      text-align: center;
     }
 
     .orb-wrap {
@@ -648,6 +696,7 @@
     <button class="info-btn" id="infoBtn" title="About Maresono">i</button>
     <h1>MARESONO</h1>
     <p class="subtitle">the sound of the sea</p>
+    <p class="product-intro">A generative ocean sound synthesizer trained on real handcrafted ocean drums, creating infinite, non-looping soundscapes in your browser.</p>
 
     <div class="orb-wrap">
       <canvas id="waveCanvas" class="wave-canvas" width="300" height="180" aria-hidden="true"></canvas>

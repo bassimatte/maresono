@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Maresono wave">
+  <defs>
+    <linearGradient id="sea" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#102944"/>
+      <stop offset="1" stop-color="#07111f"/>
+    </linearGradient>
+    <linearGradient id="wave" x1="10" y1="24" x2="54" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#8ff5e6"/>
+      <stop offset="1" stop-color="#2dd4bf"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#sea)"/>
+  <path d="M8 36c7.5-10 14.5-10 22 0s14.5 10 26 0" fill="none" stroke="url(#wave)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M12 45c6-6 12-6 18 0s12 6 22 0" fill="none" stroke="#2dd4bf" stroke-opacity=".42" stroke-width="3" stroke-linecap="round"/>
+  <circle cx="44" cy="20" r="4" fill="#d9fffb" fill-opacity=".8"/>
+</svg>

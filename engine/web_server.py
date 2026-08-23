@@ -32,6 +32,7 @@ _ENGINE_DIR = Path(__file__).resolve().parent
 _REPO_DIR = _ENGINE_DIR.parent
 _STATIC_DIR = _ENGINE_DIR / "static"
 _INDEX_FILE = _STATIC_DIR / "index.html"
+_FAVICON_FILE = _STATIC_DIR / "favicon.svg"
 _EXPORTS_DIR = _REPO_DIR / "exports"
 _DEFAULT_MODELS_DIR = _REPO_DIR / "models"
 _PREVIEW_SECONDS = 30.0
@@ -243,6 +244,13 @@ def index():
     if not _INDEX_FILE.exists():
         raise HTTPException(status_code=500, detail="Static UI not found.")
     return FileResponse(_INDEX_FILE)
+
+
+@app.get("/favicon.svg", include_in_schema=False)
+def favicon():
+    if not _FAVICON_FILE.exists():
+        raise HTTPException(status_code=404, detail="Favicon not found.")
+    return FileResponse(_FAVICON_FILE, media_type="image/svg+xml")
 
 
 @app.get("/api/models")
