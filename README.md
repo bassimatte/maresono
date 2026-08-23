@@ -14,6 +14,8 @@ and generates infinite, non-looping wave audio using spectral resynthesis.
 - **Receding wash**: Different spectral character for wave decay phase
 - **Stereo field**: Subtle spatial movement
 - **Micro-texture**: Simulates individual sphere grain contacts
+- **Continuous synthesis state**: Wave timing, filter tails, undertow, shore wash,
+  and stereo movement persist across web playback chunks
 - **FastAPI web GUI** with animated breathing circle
 - **Multiple export formats** (WAV, FLAC, OGG)
 - **Real-time preview** via sounddevice

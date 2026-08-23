@@ -189,6 +189,59 @@ class SpectralSynthesizer:
         # an explicit seed still allows reproducible offline comparisons.
         self._rng = np.random.default_rng(seed)
         self._last_wave_phase = None  # filled by _generate_multilayer_envelope
+        self._stream_sr = None
+        self._stream_sample_index = 0
+        self._stream_time = 0.0
+        self._fir_states = {}
+        self._sos_states = {}
+        self._wave_states = {}
+        self._swell_states = {}
+        self._pan_states = {}
+        self._rumble_states = {}
+        self._bubble_tails = {}
+        self._shore_level = 0.0
+        self._master_gain = None
+
+    def _reset_stream_state(self, sr: int) -> None:
+        """Reset rate-dependent state when a synthesizer changes sample rate."""
+        self._stream_sr = sr
+        self._stream_sample_index = 0
+        self._stream_time = 0.0
+        self._fir_states.clear()
+        self._sos_states.clear()
+        self._wave_states.clear()
+        self._swell_states.clear()
+        self._pan_states.clear()
+        self._rumble_states.clear()
+        self._bubble_tails.clear()
+        self._shore_level = 0.0
+        self._master_gain = None
+
+    def _filter_stream(self, signal: np.ndarray, coefficients: np.ndarray,
+                       state_key: str) -> np.ndarray:
+        """FIR-filter one block while retaining its convolution tail."""
+        from scipy.signal import lfilter
+
+        state = self._fir_states.get(state_key)
+        expected = max(0, len(coefficients) - 1)
+        if state is None or len(state) != expected:
+            state = np.zeros(expected, dtype=np.float64)
+        filtered, state = lfilter(coefficients, [1.0], signal, zi=state)
+        self._fir_states[state_key] = state
+        return filtered
+
+    def _sos_filter_stream(self, signal: np.ndarray, coefficients: np.ndarray,
+                           state_key: str) -> np.ndarray:
+        """IIR-filter one block while retaining each section's delay state."""
+        from scipy.signal import sosfilt
+
+        state = self._sos_states.get(state_key)
+        expected_shape = (len(coefficients), 2)
+        if state is None or state.shape != expected_shape:
+            state = np.zeros(expected_shape, dtype=np.float64)
+        filtered, state = sosfilt(coefficients, signal, zi=state)
+        self._sos_states[state_key] = state
+        return filtered
 
     def synthesize(self, duration: float, sr: int = None,
                    stereo: bool = True, intensity: float = 0.5,
@@ -205,6 +258,9 @@ class SpectralSynthesizer:
         # Fast mode: lower sample rate, single FIR, no micro-texture
         render_sr = 22050 if fast else sr
         n_samples = int(duration * render_sr)
+        if self._stream_sr != render_sr:
+            self._reset_stream_state(render_sr)
+        self._stream_time = self._stream_sample_index / render_sr
 
         # Build FIR filters
         fir_order = 1023 if fast else 2047
@@ -237,13 +293,15 @@ class SpectralSynthesizer:
                                             bright_fir if not fast else blended_fir,
                                             wash_fir if not fast else blended_fir,
                                             time_offset=0.0,
-                                            intensity=intensity, fast=fast)
+                                            intensity=intensity, fast=fast,
+                                            state_key='far_left')
             far_right = self._render_channel(n_samples, render_sr,
                                              quiet_fir if not fast else blended_fir,
                                              bright_fir if not fast else blended_fir,
                                              wash_fir if not fast else blended_fir,
                                              time_offset=3.5,
-                                             intensity=intensity, fast=fast)
+                                             intensity=intensity, fast=fast,
+                                             state_key='far_right')
 
             # Spatial panning for far layer — waves sweep L↔R
             far_pan = self._generate_spatial_pan(n_samples, render_sr, intensity, layer='far')
@@ -254,11 +312,13 @@ class SpectralSynthesizer:
             near_left = self._render_near_layer(n_samples, render_sr,
                                                 bright_fir if not fast else blended_fir,
                                                 wash_fir if not fast else blended_fir,
-                                                intensity=intensity, fast=fast)
+                                                intensity=intensity, fast=fast,
+                                                state_key='near_left')
             near_right = self._render_near_layer(n_samples, render_sr,
                                                  bright_fir if not fast else blended_fir,
                                                  wash_fir if not fast else blended_fir,
-                                                 intensity=intensity, fast=fast)
+                                                 intensity=intensity, fast=fast,
+                                                 state_key='near_right')
 
             # Near layer panning — narrower, more centered
             near_pan = self._generate_spatial_pan(n_samples, render_sr, intensity, layer='near')
@@ -283,41 +343,45 @@ class SpectralSynthesizer:
                                          bright_fir if not fast else blended_fir,
                                          wash_fir if not fast else blended_fir,
                                          time_offset=0.0,
-                                         intensity=intensity, fast=fast)
+                                         intensity=intensity, fast=fast,
+                                         state_key='mono')
 
-        audio = self._master_output(audio, intensity)
+        audio = self._master_stream_output(audio, intensity)
+        self._stream_sample_index += n_samples
         return audio.astype(np.float32)
 
     def _render_channel(self, n_samples: int, sr: int,
                         quiet_fir: np.ndarray, bright_fir: np.ndarray,
                         wash_fir: np.ndarray,
                         time_offset: float = 0.0,
-                        intensity: float = 0.5, fast: bool = False) -> np.ndarray:
+                        intensity: float = 0.5, fast: bool = False,
+                        state_key: str = 'far') -> np.ndarray:
         """Render a single channel of audio."""
-        from scipy.signal import fftconvolve
-
         # Draw from the session RNG so equal-length chunks never reuse a texture.
         noise = self._rng.standard_normal(n_samples)
 
         # Generate multi-layer envelope
         amp_envelope = self._generate_multilayer_envelope(
-            n_samples / sr, sr, time_offset=time_offset, intensity=intensity)
+            n_samples / sr, sr, time_offset=time_offset, intensity=intensity,
+            state_key=state_key)
 
         if fast:
             # Fast mode: single convolution with blended FIR
-            audio = fftconvolve(noise, quiet_fir, mode='same')
+            audio = self._filter_stream(noise, quiet_fir, f'{state_key}:blend')
             audio = audio * amp_envelope
             # Add rumble layer (works in fast mode too)
-            rumble = self._generate_rumble_layer(n_samples, sr, amp_envelope, intensity)
+            rumble = self._generate_rumble_layer(
+                n_samples, sr, amp_envelope, intensity, state_key=state_key)
             audio = audio + rumble
             # Add bubble transients (foam crackle)
-            bubbles = self._generate_bubble_transients(n_samples, sr, amp_envelope, intensity)
+            bubbles = self._generate_bubble_transients(
+                n_samples, sr, amp_envelope, intensity, state_key=state_key)
             audio = audio + bubbles
         else:
             # Full quality: three-way spectral crossfade driven by per-wave phase
-            quiet_stream = fftconvolve(noise, quiet_fir, mode='same')
-            bright_stream = fftconvolve(noise, bright_fir, mode='same')
-            wash_stream = fftconvolve(noise, wash_fir, mode='same')
+            quiet_stream = self._filter_stream(noise, quiet_fir, f'{state_key}:quiet')
+            bright_stream = self._filter_stream(noise, bright_fir, f'{state_key}:bright')
+            wash_stream = self._filter_stream(noise, wash_fir, f'{state_key}:wash')
 
             # Use explicit per-wave spectral phase from envelope generator
             # phase: 0=silence/between waves, rising to 1=peak/break, falling back=foam
@@ -328,8 +392,7 @@ class SpectralSynthesizer:
 
             # Compute phase derivative to distinguish approach vs recede
             phase_deriv = np.gradient(phase, 1.0 / sr)
-            d_max = np.max(np.abs(phase_deriv)) + 1e-10
-            phase_deriv_norm = phase_deriv / d_max
+            phase_deriv_norm = np.tanh(phase_deriv * 0.8)
 
             # Spectral mixing based on wave lifecycle:
             # Rising phase (approach) → bright spectrum (wave face, broadband)
@@ -359,15 +422,17 @@ class SpectralSynthesizer:
             audio = audio * amp_envelope
 
             # Add rumble layer
-            rumble = self._generate_rumble_layer(n_samples, sr, amp_envelope, intensity)
+            rumble = self._generate_rumble_layer(
+                n_samples, sr, amp_envelope, intensity, state_key=state_key)
             audio = audio + rumble
 
             # Add bubble transients (foam crackle)
-            bubbles = self._generate_bubble_transients(n_samples, sr, amp_envelope, intensity)
+            bubbles = self._generate_bubble_transients(
+                n_samples, sr, amp_envelope, intensity, state_key=state_key)
             audio = audio + bubbles
 
             # Micro-texture (skip in fast mode)
-            grain = self._generate_micro_texture(n_samples, sr)
+            grain = self._generate_micro_texture(n_samples, sr, state_key=state_key)
             audio = audio * grain
 
         return audio
@@ -395,6 +460,38 @@ class SpectralSynthesizer:
             audio = audio * correction
 
         # Leave normal samples untouched and round only peaks into a 0.98 ceiling.
+        threshold = 0.82
+        ceiling = 0.98
+        magnitude = np.abs(audio)
+        over = magnitude > threshold
+        if np.any(over):
+            span = ceiling - threshold
+            limited = threshold + span * np.tanh((magnitude[over] - threshold) / span)
+            audio = audio.copy()
+            audio[over] = np.sign(audio[over]) * limited
+        return audio
+
+    def _master_stream_output(self, audio: np.ndarray,
+                              intensity: float) -> np.ndarray:
+        """Master a block without introducing a gain step at its boundary."""
+        target_rms = float(np.interp(intensity, [0.0, 1.0], [0.10, 0.12]))
+        current_rms = self._rms(audio)
+        desired_gain = 1.0
+        if current_rms > 1e-10:
+            desired_gain = float(np.clip(target_rms / current_rms, 0.05, 3.0))
+
+        start_gain = desired_gain if self._master_gain is None else self._master_gain
+        ramp_samples = min(len(audio), max(1, int((self._stream_sr or 44100) * 3.0)))
+        gains = np.full(len(audio), desired_gain, dtype=np.float64)
+        if ramp_samples > 1:
+            gains[:ramp_samples] = np.linspace(
+                start_gain, desired_gain, ramp_samples, endpoint=True)
+        if audio.ndim > 1:
+            audio = audio * gains[:, np.newaxis]
+        else:
+            audio = audio * gains
+        self._master_gain = desired_gain
+
         threshold = 0.82
         ceiling = 0.98
         magnitude = np.abs(audio)
@@ -476,41 +573,52 @@ class SpectralSynthesizer:
         
         Returns array in [0,1] where 0.5=center, 0=full left, 1=full right.
         """
-        from scipy.ndimage import uniform_filter1d
-
-        # Control rate for smooth panning
-        ctrl_rate = 10  # Hz
-        n_ctrl = max(4, int(n_samples / sr * ctrl_rate))
-
-        rng = self._rng
-
+        start = self._stream_time
+        times = start + np.arange(n_samples, dtype=np.float64) / sr
         if layer == 'far':
-            # Slow sweeps correlated with wave groups — period 6-15s
-            n_sweeps = max(2, int(n_samples / sr / rng.uniform(6, 12)))
-            # Random target positions per sweep
-            targets = rng.uniform(0.15, 0.85, n_sweeps + 1)
-            # Interpolate smoothly between targets
-            t_targets = np.linspace(0, n_ctrl - 1, n_sweeps + 1)
-            t_all = np.arange(n_ctrl)
-            pan_ctrl = np.interp(t_all, t_targets, targets)
-            # Extra smoothing for natural sweep
-            smooth_size = max(3, int(ctrl_rate * 1.5))
-            pan_ctrl = uniform_filter1d(pan_ctrl, smooth_size)
+            value_range = (0.15, 0.85)
+            duration_range = (6.0, 12.0)
         else:
-            # Near layer: faster, narrower, more random
-            pan_ctrl = rng.uniform(0.3, 0.7, n_ctrl)
-            # Smooth to avoid clicks
-            smooth_size = max(3, int(ctrl_rate * 0.8))
-            pan_ctrl = uniform_filter1d(pan_ctrl, smooth_size)
+            value_range = (0.3, 0.7)
+            duration_range = (0.8, 2.2)
 
-        # Upsample to audio rate
-        pan = np.interp(np.linspace(0, 1, n_samples),
-                        np.linspace(0, 1, n_ctrl), pan_ctrl)
+        state = self._pan_states.get(layer)
+        if state is None:
+            initial = float(self._rng.uniform(*value_range))
+            state = {
+                'start': start,
+                'end': start + float(self._rng.uniform(*duration_range)),
+                'from': initial,
+                'to': float(self._rng.uniform(*value_range)),
+            }
+            self._pan_states[layer] = state
+
+        pan = np.empty(n_samples, dtype=np.float64)
+        filled = np.zeros(n_samples, dtype=bool)
+        while not np.all(filled):
+            mask = (~filled) & (times >= state['start']) & (times < state['end'])
+            if np.any(mask):
+                progress = (times[mask] - state['start']) / (
+                    state['end'] - state['start'])
+                eased = 0.5 - 0.5 * np.cos(np.pi * progress)
+                pan[mask] = state['from'] + (state['to'] - state['from']) * eased
+                filled[mask] = True
+            if np.all(filled):
+                break
+            previous_target = state['to']
+            state.update({
+                'start': state['end'],
+                'end': state['end'] + float(self._rng.uniform(*duration_range)),
+                'from': previous_target,
+                'to': float(self._rng.uniform(*value_range)),
+            })
+
         return pan
 
     def _render_near_layer(self, n_samples: int, sr: int,
                            bright_fir: np.ndarray, wash_fir: np.ndarray,
-                           intensity: float = 0.5, fast: bool = False) -> np.ndarray:
+                           intensity: float = 0.5, fast: bool = False,
+                           state_key: str = 'near') -> np.ndarray:
         """
         Render the 'near' layer — small intimate waves lapping at your feet.
         
@@ -520,21 +628,22 @@ class SpectralSynthesizer:
         - Brighter spectrum (more high-frequency sand/water detail)
         - Independent timing from far layer
         """
-        from scipy.signal import fftconvolve
-
         noise = self._rng.standard_normal(n_samples)
 
         # Generate near-wave envelope with faster, smaller waves
-        near_env = self._generate_near_envelope(n_samples / sr, sr, intensity)
+        near_env = self._generate_near_envelope(
+            n_samples / sr, sr, intensity, state_key=state_key)
 
         if fast:
-            audio = fftconvolve(noise, bright_fir, mode='same')
+            audio = self._filter_stream(noise, bright_fir, f'{state_key}:blend')
             audio = audio * near_env
         else:
             # Near waves are mostly bright + wash (little quiet component)
-            bright_stream = fftconvolve(noise, bright_fir, mode='same')
+            bright_stream = self._filter_stream(
+                noise, bright_fir, f'{state_key}:bright')
             if wash_fir is not None:
-                wash_stream = fftconvolve(noise, wash_fir, mode='same')
+                wash_stream = self._filter_stream(
+                    noise, wash_fir, f'{state_key}:wash')
                 # Near waves: 60% bright + 40% wash (hissy sand sound)
                 audio = bright_stream * 0.6 + wash_stream * 0.4
             else:
@@ -544,65 +653,70 @@ class SpectralSynthesizer:
         return audio
 
     def _generate_near_envelope(self, duration: float, sr: int,
-                                intensity: float) -> np.ndarray:
+                                intensity: float,
+                                state_key: str = 'near') -> np.ndarray:
         """
         Envelope for near lapping waves — faster, smaller, more regular.
         Period: 1.5-4s, amplitude: 0.3-0.7 (never as loud as far breakers).
         """
-        from scipy.ndimage import uniform_filter1d
+        start = self._stream_time
+        end = start + duration
+        key = f'near:{state_key}'
+        state = self._wave_states.get(key)
+        if state is None:
+            state = {
+                'next_time': start + float(self._rng.uniform(0.3, 1.5)),
+                'events': [],
+            }
+            self._wave_states[key] = state
 
-        n_points = int(duration * 10)  # 10 Hz control rate
-        dt = 1.0 / 10.0
-        envelope = np.zeros(n_points)
-
-        # Near wave timing: shorter periods, more regular
         period_scale = np.sqrt(self._model_period_scale())
-        min_period = np.interp(intensity, [0.0, 0.5, 1.0], [3.0, 2.2, 1.5]) * period_scale
-        max_period = np.interp(intensity, [0.0, 0.5, 1.0], [5.0, 4.0, 3.0]) * period_scale
+        min_period = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [3.0, 2.2, 1.5])) * period_scale
+        max_period = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [5.0, 4.0, 3.0])) * period_scale
 
-        current_time = self._rng.uniform(0.3, 1.5)
-        while current_time < duration - 0.5:
-            period = self._rng.uniform(min_period, max_period)
-            amp = self._rng.uniform(0.3, 0.7)
+        while state['next_time'] < end:
+            period = float(self._rng.uniform(min_period, max_period))
+            active_duration = period * 0.7
+            event = {
+                'start': state['next_time'],
+                'duration': active_duration,
+                'rise': float(self._rng.uniform(0.35, 0.50)),
+                'amplitude': float(self._rng.uniform(0.3, 0.7)),
+            }
+            state['events'].append(event)
+            state['next_time'] += active_duration + float(self._rng.uniform(0.2, 0.8))
 
-            # Gentler shape: symmetric-ish, like water lapping
-            rise_frac = self._rng.uniform(0.35, 0.50)
-            active_dur = period * 0.7  # shorter active portion
+        state['events'] = [
+            event for event in state['events']
+            if event['start'] + event['duration'] >= start
+        ]
 
-            i_start = int(current_time / dt)
-            i_end = int((current_time + active_dur) / dt)
-            i_start = max(0, min(i_start, n_points - 1))
-            i_end = max(i_start + 1, min(i_end, n_points))
-            n_wave = i_end - i_start
+        ctrl_rate = 20.0
+        ctrl_times = start + np.arange(
+            max(2, int(np.ceil(duration * ctrl_rate)) + 1)) / ctrl_rate
+        envelope = np.zeros(len(ctrl_times), dtype=np.float64)
+        for event in state['events']:
+            progress = (ctrl_times - event['start']) / event['duration']
+            active = (progress >= 0.0) & (progress <= 1.0)
+            if not np.any(active):
+                continue
+            local = progress[active]
+            rise = event['rise']
+            shape = np.where(
+                local < rise,
+                np.power(np.clip(local / rise, 0.0, 1.0), 1.2),
+                np.power(np.clip((1.0 - local) / (1.0 - rise), 0.0, 1.0), 0.9),
+            )
+            envelope[active] = np.maximum(
+                envelope[active], shape * event['amplitude'])
 
-            if n_wave > 2:
-                rise_len = max(2, int(n_wave * rise_frac))
-                decay_len = max(1, n_wave - rise_len)
-                # Gentler shape for lapping (less sharp peak)
-                rise = np.linspace(0, 1, rise_len) ** 1.2
-                decay = (1.0 - np.linspace(0, 1, decay_len)) ** 0.9
-                wave_shape = np.concatenate([rise, decay]) * amp
-                end_idx = min(i_start + len(wave_shape), n_points)
-                envelope[i_start:end_idx] = np.maximum(
-                    envelope[i_start:end_idx], wave_shape[:end_idx - i_start])
-
-            # Short pause between lapping waves
-            pause = self._rng.uniform(0.2, 0.8)
-            current_time += active_dur + pause
-
-        # Add ambient floor (near water is always present)
-        floor = np.interp(intensity, [0.0, 0.5, 1.0], [0.10, 0.15, 0.20])
+        floor = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.10, 0.15, 0.20]))
         envelope = np.maximum(envelope, floor)
-
-        # Smooth
-        envelope = uniform_filter1d(envelope, size=5)
-
-        # Upsample to audio rate
-        n_audio = int(duration * sr)
-        from scipy.interpolate import interp1d
-        env_interp = interp1d(np.linspace(0, 1, len(envelope)),
-                              envelope, kind='cubic')
-        return env_interp(np.linspace(0, 1, n_audio))
+        audio_times = start + np.arange(int(duration * sr), dtype=np.float64) / sr
+        return np.interp(audio_times, ctrl_times, envelope)
 
     def _generate_shore_wash(self, n_samples: int, sr: int,
                              intensity: float,
@@ -615,8 +729,7 @@ class SpectralSynthesizer:
         High-frequency (1-8kHz) with long foam tails.
         Returns (left, right) tuple.
         """
-        from scipy.signal import butter, sosfilt
-        from scipy.ndimage import uniform_filter1d
+        from scipy.signal import butter
 
         nyq = sr / 2
 
@@ -639,7 +752,7 @@ class SpectralSynthesizer:
         decay_per_step = decay_rate / ctrl_rate
         rise_alpha = 1.0 - 0.95 ** (sr / ctrl_rate)  # adapt smoothing to ctrl rate
 
-        running_level = 0.0
+        running_level = self._shore_level
         for i in range(n_ctrl):
             input_energy = max(0, phase_ctrl[i] - 0.3) * 2.0
             if input_energy > running_level:
@@ -647,15 +760,13 @@ class SpectralSynthesizer:
             else:
                 running_level = max(0, running_level - decay_per_step)
             shore_ctrl[i] = running_level
+        self._shore_level = running_level
 
         # Upsample to audio rate
         shore_trigger = np.interp(np.linspace(0, 1, n_samples),
                                   np.linspace(0, 1, n_ctrl), shore_ctrl)
 
-        # Normalize
-        peak_trigger = np.max(shore_trigger)
-        if peak_trigger > 0:
-            shore_trigger = shore_trigger / peak_trigger
+        shore_trigger = np.clip(shore_trigger, 0.0, 1.0)
 
         # Generate shore noise — band-limited 800Hz-8kHz (sand/foam character)
         noise_l = self._rng.standard_normal(n_samples)
@@ -666,8 +777,10 @@ class SpectralSynthesizer:
         high_cut = min(8000.0 / nyq, 0.99)
         if low_cut < high_cut:
             sos = butter(3, [low_cut, high_cut], btype='band', output='sos')
-            shore_noise_l = sosfilt(sos, noise_l)
-            shore_noise_r = sosfilt(sos, noise_r)
+            shore_noise_l = self._sos_filter_stream(
+                noise_l, sos, 'shore:left')
+            shore_noise_r = self._sos_filter_stream(
+                noise_r, sos, 'shore:right')
         else:
             shore_noise_l = noise_l
             shore_noise_r = noise_r
@@ -682,21 +795,23 @@ class SpectralSynthesizer:
 
         return shore_l, shore_r
 
-    def _generate_micro_texture(self, n_samples: int, sr: int) -> np.ndarray:
+    def _generate_micro_texture(self, n_samples: int, sr: int,
+                                state_key: str = 'texture') -> np.ndarray:
         """Subtle 5-20 Hz amplitude flicker simulating sphere contacts."""
-        from scipy.signal import butter, sosfilt
+        from scipy.signal import butter
 
         mod_noise = self._rng.standard_normal(n_samples)
         nyq = sr / 2
         sos = butter(2, [5.0 / nyq, 20.0 / nyq], btype='band', output='sos')
-        grain_signal = sosfilt(sos, mod_noise)
-        grain_signal = grain_signal / (np.max(np.abs(grain_signal)) + 1e-10)
+        grain_signal = self._sos_filter_stream(
+            mod_noise, sos, f'{state_key}:micro')
 
-        return 1.0 + 0.10 * grain_signal
+        return 1.0 + 0.10 * np.tanh(grain_signal * 15.0)
 
     def _generate_rumble_layer(self, n_samples: int, sr: int,
                                 amp_envelope: np.ndarray,
-                                intensity: float = 0.5) -> np.ndarray:
+                                intensity: float = 0.5,
+                                state_key: str = 'rumble') -> np.ndarray:
         """
         Sub-bass rumble layer (20-80 Hz) with two components:
         1. Independent slow undertow — its own swell cycle (8-20s period)
@@ -704,7 +819,7 @@ class SpectralSynthesizer:
         
         Returns audio to be mixed into the main signal.
         """
-        from scipy.signal import butter, sosfilt
+        from scipy.signal import butter, lfilter
 
         nyq = sr / 2
         if nyq <= 80:
@@ -717,49 +832,59 @@ class SpectralSynthesizer:
         low = max(20.0 / nyq, 0.001)
         high = min(80.0 / nyq, 0.99)
         sos = butter(3, [low, high], btype='band', output='sos')
-        bass_noise = sosfilt(sos, noise)
+        bass_noise = self._sos_filter_stream(
+            noise, sos, f'{state_key}:rumble-filter')
 
         # --- Component 1: Independent undertow swell ---
         # Slow envelope with its own random period (8-20s)
-        control_rate = 10  # Hz
-        n_ctrl = max(4, int(n_samples / sr * control_rate))
-        period = self._rng.uniform(8.0, 20.0)
-        t_ctrl = np.linspace(0, n_samples / sr, n_ctrl)
-        # Random phase so each chunk is different
-        phase = self._rng.uniform(0, 2 * np.pi)
-        undertow_env = 0.5 + 0.5 * np.sin(2 * np.pi * t_ctrl / period + phase)
-        # Add some randomness
-        undertow_env *= (0.7 + 0.3 * self._rng.random(n_ctrl))
-        # Interpolate to sample rate
-        t_samples = np.linspace(0, n_samples / sr, n_samples)
-        undertow_env_full = np.interp(t_samples, t_ctrl, undertow_env)
+        state = self._rumble_states.get(state_key)
+        if state is None:
+            state = {
+                'period': float(self._rng.uniform(8.0, 20.0)),
+                'phase': float(self._rng.uniform(0, 2 * np.pi)),
+                'gain': None,
+            }
+            self._rumble_states[state_key] = state
+        times = self._stream_time + np.arange(n_samples, dtype=np.float64) / sr
+        undertow_env_full = 0.5 + 0.5 * np.sin(
+            2 * np.pi * times / state['period'] + state['phase'])
 
         # --- Component 2: Peak-coupled rumble ---
         # Follow the main envelope but emphasize peaks
         # Square the envelope to emphasize louder moments
         peak_env = amp_envelope ** 2
         # Smooth it slightly for a lagging bass response
-        from scipy.ndimage import uniform_filter1d
-        smooth_len = min(int(sr * 0.3), n_samples)  # 300ms smoothing
-        if smooth_len > 1:
-            peak_env = uniform_filter1d(peak_env, smooth_len)
+        smoothing_seconds = 0.3
+        alpha = 1.0 - np.exp(-1.0 / (sr * smoothing_seconds))
+        peak_key = f'{state_key}:rumble-envelope'
+        peak_state = self._fir_states.get(peak_key)
+        if peak_state is None or len(peak_state) != 1:
+            peak_state = np.zeros(1, dtype=np.float64)
+        peak_env, peak_state = lfilter(
+            [alpha], [1.0, -(1.0 - alpha)], peak_env, zi=peak_state)
+        self._fir_states[peak_key] = peak_state
 
         # Combine: 60% independent undertow + 40% peak-coupled
         combined_env = 0.6 * undertow_env_full + 0.4 * peak_env
-        combined_env = combined_env / (np.max(combined_env) + 1e-10)
-
-        # Apply envelope to bass noise
+        combined_env = np.clip(combined_env, 0.0, 1.0)
         rumble = bass_noise * combined_env
 
-        # Calibrate rumble energy rather than forcing every chunk to the same peak.
+        # Calibrate energy with a slow gain transition instead of a block reset.
         rumble_rms = np.interp(intensity, [0.0, 0.5, 1.0], [0.006, 0.014, 0.025])
-        rumble = self._scale_to_rms(rumble, rumble_rms)
+        current_rms = self._rms(rumble)
+        desired_gain = 1.0 if current_rms <= 1e-10 else float(
+            np.clip(rumble_rms / current_rms, 0.05, 20.0))
+        start_gain = desired_gain if state['gain'] is None else state['gain']
+        gain_ramp = np.linspace(start_gain, desired_gain, n_samples, endpoint=True)
+        rumble = rumble * gain_ramp
+        state['gain'] = desired_gain
 
         return rumble
 
     def _generate_bubble_transients(self, n_samples: int, sr: int,
                                      amp_envelope: np.ndarray,
-                                     intensity: float = 0.5) -> np.ndarray:
+                                     intensity: float = 0.5,
+                                     state_key: str = 'bubbles') -> np.ndarray:
         """
         Sparse bubble transients based on Minnaert resonance physics.
         
@@ -773,6 +898,12 @@ class SpectralSynthesizer:
         """
         rng = self._rng
         output = np.zeros(n_samples)
+        previous_tail = self._bubble_tails.pop(state_key, None)
+        if previous_tail is not None:
+            tail_length = min(n_samples, len(previous_tail))
+            output[:tail_length] += previous_tail[:tail_length]
+            if len(previous_tail) > n_samples:
+                self._bubble_tails[state_key] = previous_tail[n_samples:]
 
         # Bubble event density (events per second) scales with intensity
         # Calm: sparse crackle; stormy: dense foam fizz
@@ -820,16 +951,13 @@ class SpectralSynthesizer:
                 # e^(-ζωt) = 0.01 → t = ln(100) / (ζω)
                 omega = 2 * np.pi * freq
                 bubble_duration = min(4.6 / (damping * omega), 0.15)  # cap at 150ms
-                bubble_samples = min(int(bubble_duration * sr), n_samples // 4)
+                bubble_samples = int(bubble_duration * sr)
                 
                 if bubble_samples < 4:
                     continue
 
                 # Random onset within this control segment
                 onset = rng.integers(t_start_sample, max(t_start_sample + 1, t_end_sample))
-                if onset + bubble_samples > n_samples:
-                    bubble_samples = n_samples - onset
-
                 # Synthesize damped sinusoid
                 t = np.arange(bubble_samples) / sr
                 bubble = np.exp(-damping * omega * t) * np.sin(omega * t)
@@ -837,7 +965,18 @@ class SpectralSynthesizer:
                 # Random amplitude (smaller bubbles tend to be quieter)
                 amp = rng.uniform(0.3, 1.0) * (radius / 0.01) ** 0.3
                 
-                output[onset:onset + bubble_samples] += bubble * amp
+                available = min(bubble_samples, n_samples - onset)
+                output[onset:onset + available] += bubble[:available] * amp
+                if available < bubble_samples:
+                    tail = bubble[available:] * amp
+                    existing = self._bubble_tails.get(state_key)
+                    if existing is None:
+                        self._bubble_tails[state_key] = tail.copy()
+                    else:
+                        if len(existing) < len(tail):
+                            existing = np.pad(existing, (0, len(tail) - len(existing)))
+                        existing[:len(tail)] += tail
+                        self._bubble_tails[state_key] = existing
 
         # Fixed gain preserves natural event-density variation between chunks.
         bubble_gain = np.interp(intensity, [0.0, 0.5, 1.0], [0.003, 0.008, 0.016])
@@ -880,7 +1019,8 @@ class SpectralSynthesizer:
 
     def _generate_multilayer_envelope(self, duration: float, sr: int,
                                        time_offset: float = 0.0,
-                                       intensity: float = 0.5) -> np.ndarray:
+                                       intensity: float = 0.5,
+                                       state_key: str = 'far') -> np.ndarray:
         """
         Multi-layer envelope with oceanographic wave statistics:
         - Layer 1 (swell): Slow undulation — wave SETS (groups)
@@ -893,154 +1033,153 @@ class SpectralSynthesizer:
         """
         stats = self.model.amp_stats
         intensity = float(np.clip(intensity, 0.0, 1.0))
-        n_points = int(duration * 10)  # 10 Hz control rate
-        dt = 1.0 / 10.0  # seconds per point
-
-        # --- Layer 1: Slow swell (wave groups / sets) ---
-        t = np.linspace(0, duration, n_points, endpoint=False)
-        swell = np.zeros(n_points)
+        start = self._stream_time
+        end = start + duration
         period_scale = self._model_period_scale()
-        n_swell_layers = int(round(np.interp(intensity, [0.0, 0.5, 1.0], [2.0, 3.0, 4.0])))
-        swell_period_scale = np.sqrt(period_scale)
-        swell_min_period = np.interp(intensity, [0.0, 0.5, 1.0], [10.0, 8.0, 6.0]) * swell_period_scale
-        swell_max_period = np.interp(intensity, [0.0, 0.5, 1.0], [18.0, 15.0, 11.0]) * swell_period_scale
-        swell_floor = np.interp(intensity, [0.0, 0.5, 1.0], [0.16, 0.3, 0.42])
-        swell_depth = np.interp(intensity, [0.0, 0.5, 1.0], [0.42, 0.7, 0.9])
-        for _ in range(n_swell_layers):
-            swell_period = self._rng.uniform(swell_min_period, swell_max_period)
-            swell_phase = self._rng.uniform(0, 2 * np.pi) + time_offset * 2 * np.pi / swell_period
-            swell_amp = self._rng.uniform(0.22, np.interp(intensity, [0.0, 0.5, 1.0], [0.45, 0.6, 0.85]))
-            swell += swell_amp * (0.5 + 0.5 * np.sin(2 * np.pi * t / swell_period + swell_phase))
 
-        swell = swell / (np.max(swell) + 1e-10)
+        wave_key = f'far:{state_key}'
+        state = self._wave_states.get(wave_key)
+        if state is None:
+            state = {
+                'next_time': start + float(self._rng.uniform(0.2, 1.0)),
+                'events': [],
+                'group_remaining': 0,
+                'group_position': 0,
+                'group_total': 0,
+            }
+            self._wave_states[wave_key] = state
+
+        min_period = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [4.0, 3.0, 2.0])) * period_scale
+        max_period = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [8.0, 6.0, 4.5])) * period_scale
+        learned_variation = stats.get('std', 0.2) / max(
+            stats.get('mean', 0.4), 0.05)
+        variation_scale = float(np.clip(learned_variation / 0.5, 0.75, 1.25))
+        rayleigh_scale = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.95])) * variation_scale
+        inter_group_pause = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [4.0, 2.5, 1.0]))
+
+        while state['next_time'] < end:
+            if state['group_remaining'] <= 0:
+                state['group_total'] = int(self._rng.integers(3, 8))
+                state['group_remaining'] = state['group_total']
+                state['group_position'] = 0
+
+            raw_height = float(self._rng.rayleigh(rayleigh_scale))
+            amplitude = float(np.clip(raw_height, 0.15, 1.4))
+            center = (state['group_total'] - 1) / 2.0
+            group_factor = 1.0 + 0.3 * np.exp(
+                -((state['group_position'] - center) ** 2)
+                / (max(1.0, state['group_total'] / 3.0) ** 2))
+            amplitude *= group_factor
+            base_period = float(self._rng.uniform(min_period, max_period))
+            active_duration = base_period * (0.8 + 0.4 * (amplitude / 1.4))
+            rise = float(self._rng.uniform(
+                np.interp(intensity, [0.0, 1.0], [0.30, 0.20]),
+                np.interp(intensity, [0.0, 1.0], [0.42, 0.35]),
+            ))
+            state['events'].append({
+                'start': state['next_time'],
+                'duration': active_duration,
+                'rise': rise,
+                'amplitude': amplitude,
+            })
+
+            state['group_remaining'] -= 1
+            state['group_position'] += 1
+            if state['group_remaining'] <= 0:
+                pause = float(self._rng.uniform(
+                    inter_group_pause * 0.7, inter_group_pause * 1.5))
+            else:
+                base_pause = float(np.interp(
+                    intensity, [0.0, 0.5, 1.0], [1.0, 0.5, 0.15]))
+                pause = float(self._rng.uniform(
+                    base_pause * 0.6, base_pause * 1.4))
+            state['next_time'] += active_duration + pause
+
+        state['events'] = [
+            event for event in state['events']
+            if event['start'] + event['duration'] >= start
+        ]
+
+        ctrl_rate = 20.0
+        ctrl_times = start + np.arange(
+            max(2, int(np.ceil(duration * ctrl_rate)) + 1)) / ctrl_rate
+        waves = np.zeros(len(ctrl_times), dtype=np.float64)
+        wave_phase = np.zeros(len(ctrl_times), dtype=np.float64)
+        for event in state['events']:
+            progress = (ctrl_times - event['start']) / event['duration']
+            active = (progress >= 0.0) & (progress <= 1.0)
+            if not np.any(active):
+                continue
+            local = progress[active]
+            rise = event['rise']
+            shape = np.where(
+                local < rise,
+                np.power(np.clip(local / rise, 0.0, 1.0), 1.5),
+                np.power(np.clip((1.0 - local) / (1.0 - rise), 0.0, 1.0), 0.7),
+            )
+            phase = np.where(
+                local < rise,
+                np.clip(local / rise, 0.0, 1.0),
+                np.clip((1.0 - local) / (1.0 - rise), 0.0, 1.0),
+            )
+            waves[active] += shape * event['amplitude']
+            wave_phase[active] = np.maximum(wave_phase[active], phase)
+        waves = np.clip(waves / 1.82, 0.0, 1.0)
+
+        swell_key = f'far:{state_key}'
+        swell_layers = self._swell_states.get(swell_key)
+        if swell_layers is None:
+            layer_count = int(round(np.interp(
+                intensity, [0.0, 0.5, 1.0], [2.0, 3.0, 4.0])))
+            period_scale_root = np.sqrt(period_scale)
+            minimum = float(np.interp(
+                intensity, [0.0, 0.5, 1.0], [10.0, 8.0, 6.0])) * period_scale_root
+            maximum = float(np.interp(
+                intensity, [0.0, 0.5, 1.0], [18.0, 15.0, 11.0])) * period_scale_root
+            amplitude_max = float(np.interp(
+                intensity, [0.0, 0.5, 1.0], [0.45, 0.6, 0.85]))
+            swell_layers = [
+                {
+                    'period': float(self._rng.uniform(minimum, maximum)),
+                    'phase': float(self._rng.uniform(0, 2 * np.pi)),
+                    'amplitude': float(self._rng.uniform(0.22, amplitude_max)),
+                }
+                for _ in range(layer_count)
+            ]
+            self._swell_states[swell_key] = swell_layers
+
+        swell = np.zeros(len(ctrl_times), dtype=np.float64)
+        swell_weight = 0.0
+        for layer in swell_layers:
+            swell += layer['amplitude'] * (
+                0.5 + 0.5 * np.sin(
+                    2 * np.pi * (ctrl_times + time_offset) / layer['period']
+                    + layer['phase']))
+            swell_weight += layer['amplitude']
+        swell /= swell_weight + 1e-10
+        swell_floor = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.16, 0.3, 0.42]))
+        swell_depth = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.42, 0.7, 0.9]))
         swell = swell_floor + swell_depth * swell
 
-        # --- Layer 2: Oceanographic wave events ---
-        # Waves arrive in GROUPS (sets) of 3-7, with Rayleigh-distributed heights.
-        # Within a group, wave heights follow a pattern where middle waves are largest.
-        waves = np.zeros(n_points)
-        wave_phase = np.zeros(n_points)  # 0=silence, rising=approach, 1=peak/break, falling=foam/recede
-
-        # Wave timing parameters
-        min_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [4.0, 3.0, 2.0]) * period_scale
-        max_wave_period = np.interp(intensity, [0.0, 0.5, 1.0], [8.0, 6.0, 4.5]) * period_scale
-        # Rayleigh scale parameter (significant wave height proxy)
-        learned_variation = stats.get('std', 0.2) / max(stats.get('mean', 0.4), 0.05)
-        variation_scale = np.clip(learned_variation / 0.5, 0.75, 1.25)
-        rayleigh_scale = np.interp(intensity, [0.0, 0.5, 1.0], [0.4, 0.7, 0.95]) * variation_scale
-
-        current_time = self._rng.uniform(0.2, 1.0)
-        group_size = 0  # waves remaining in current group
-        group_position = 0  # position within group (0-indexed)
-        group_total = 0  # total waves in current group
-        inter_group_pause = np.interp(intensity, [0.0, 0.5, 1.0], [4.0, 2.5, 1.0])
-
-        while current_time < duration - 1.0:
-            # Start new group if needed
-            if group_size <= 0:
-                group_total = self._rng.integers(3, 8)  # 3-7 waves per set
-                group_size = group_total
-                group_position = 0
-
-            # Rayleigh-distributed height (ocean wave height statistics)
-            raw_height = self._rng.rayleigh(rayleigh_scale)
-            wave_amp = np.clip(raw_height, 0.15, 1.4)
-
-            # Group modulation: middle waves in a set are ~30% larger
-            # Bell-shaped group envelope centered at position group_total/2
-            group_center = (group_total - 1) / 2.0
-            group_factor = 1.0 + 0.3 * np.exp(-((group_position - group_center) ** 2) /
-                                               (max(1, group_total / 3.0) ** 2))
-            wave_amp *= group_factor
-
-            # Wave duration: larger waves last longer (physics: T ∝ √H)
-            base_period = self._rng.uniform(min_wave_period, max_wave_period)
-            active_dur = base_period * (0.8 + 0.4 * (wave_amp / 1.4))
-
-            # Asymmetric shape: fast rise (25-40%), slow decay (60-75%)
-            # Stormy waves rise faster (more abrupt breaking)
-            rise_frac = self._rng.uniform(
-                np.interp(intensity, [0.0, 1.0], [0.30, 0.20]),
-                np.interp(intensity, [0.0, 1.0], [0.42, 0.35])
-            )
-
-            i_start = int(current_time / dt)
-            i_end = int((current_time + active_dur) / dt)
-            i_start = max(0, min(i_start, n_points - 1))
-            i_end = max(i_start + 1, min(i_end, n_points))
-
-            n_wave = i_end - i_start
-            if n_wave > 2:
-                rise_len = max(2, int(n_wave * rise_frac))
-                decay_len = max(1, n_wave - rise_len)
-
-                # Rise: concave-up (wave approaching accelerates)
-                rise = np.linspace(0, 1, rise_len) ** 1.5
-                # Decay: convex (foam dissipates with lingering tail)
-                decay = (1.0 - np.linspace(0, 1, decay_len)) ** 0.7
-
-                wave_shape = np.concatenate([rise, decay]) * wave_amp
-                end_idx = min(i_start + len(wave_shape), n_points)
-                waves[i_start:end_idx] += wave_shape[:end_idx - i_start]
-
-                # Per-wave spectral phase signal:
-                # 0.0 = approaching (dark/quiet), 0.5 = rising (getting brighter),
-                # 1.0 = peak/breaking (brightest), 0.5→0 = foam/recede (hissy→dark)
-                phase_rise = np.linspace(0.0, 1.0, rise_len)
-                phase_decay = np.linspace(1.0, 0.0, decay_len)
-                phase_shape = np.concatenate([phase_rise, phase_decay])
-                # Only write where wave is active (don't overwrite with 0 in overlaps)
-                seg_len = end_idx - i_start
-                # Use max to handle overlapping waves
-                wave_phase[i_start:end_idx] = np.maximum(
-                    wave_phase[i_start:end_idx], phase_shape[:seg_len])
-
-            # Inter-wave pause: shorter within group, longer between groups
-            group_size -= 1
-            group_position += 1
-
-            if group_size <= 0:
-                # Between groups: longer pause with some randomness
-                pause = self._rng.uniform(inter_group_pause * 0.7, inter_group_pause * 1.5)
-            else:
-                # Within group: regular spacing with slight jitter
-                base_pause = np.interp(intensity, [0.0, 0.5, 1.0], [1.0, 0.5, 0.15])
-                pause = self._rng.uniform(base_pause * 0.6, base_pause * 1.4)
-
-            current_time += active_dur + pause
-
-        # Normalize waves to [0, 1]
-        peak_val = np.max(waves)
-        if peak_val > 0:
-            waves = waves / peak_val
-
-        # --- Combine: waves modulated by swell ---
         envelope = waves * swell
-
-        # Scale to learned dynamic range — never fully silent
-        amp_min = stats['min'] * np.interp(intensity, [0.0, 0.5, 1.0], [0.06, 0.15, 0.22])
-        amp_max = min(stats['max'] * np.interp(intensity, [0.0, 0.5, 1.0], [0.72, 1.1, 1.35]), 1.0)
+        amp_min = stats['min'] * float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.06, 0.15, 0.22]))
+        amp_max = min(stats['max'] * float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.72, 1.1, 1.35])), 1.0)
         envelope = amp_min + envelope * (amp_max - amp_min)
-
-        # Add ambient floor so it never goes fully silent
-        ambient_floor = np.interp(intensity, [0.0, 0.5, 1.0], [0.08, 0.12, 0.18])
+        ambient_floor = float(np.interp(
+            intensity, [0.0, 0.5, 1.0], [0.08, 0.12, 0.18]))
         envelope = np.maximum(envelope, ambient_floor)
 
-        # Smooth
-        from scipy.ndimage import uniform_filter1d
-        envelope = uniform_filter1d(envelope, size=8)
-
-        # Upsample to audio rate
-        n_audio = int(duration * sr)
-        envelope_interp = interp1d(np.linspace(0, 1, len(envelope)),
-                                   envelope, kind='cubic')
-        
-        # Also upsample wave phase for spectral evolution
-        phase_interp = interp1d(np.linspace(0, 1, len(wave_phase)),
-                                wave_phase, kind='linear')
-        self._last_wave_phase = phase_interp(np.linspace(0, 1, n_audio))
-
-        return envelope_interp(np.linspace(0, 1, n_audio))
+        audio_times = start + np.arange(int(duration * sr), dtype=np.float64) / sr
+        self._last_wave_phase = np.interp(audio_times, ctrl_times, wave_phase)
+        return np.interp(audio_times, ctrl_times, envelope)
 
 
 def learn_from_file(wav_path: str) -> SpectralModel:

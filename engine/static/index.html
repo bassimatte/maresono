@@ -832,7 +832,7 @@
       <p><strong>Maresono</strong> (mare + suono — sea + sound) is a generative ocean sound engine that learns from real ocean drum recordings and creates infinite, never-repeating soundscapes.</p>
       <p><strong>How it works:</strong> Each model is built by analyzing the spectral fingerprint of a real handcrafted ocean drum. The engine extracts the frequency shape, amplitude dynamics, and timbral variation from the recording, then resynthesizes new audio by shaping noise through learned FIR filters — producing sound that is spectrally identical to the real instrument but infinitely generatable.</p>
       <p><strong>Philosophy:</strong> Rather than simulating physics or looping samples, Maresono takes an analysis-resynthesis approach inspired by how our ears perceive the sea — layers of spectral texture, slow swells, and micro-variations that never quite repeat. The result is a meditative, always-evolving ocean that lives somewhere between the real and the imagined.</p>
-      <p><strong>Features:</strong> Multi-layer envelopes (slow swells modulating individual waves), three-way spectral crossfade (approaching waves are brighter, receding waves are thinner), perceptual corrections for natural warmth, and generative infinite playback with seamless crossfading between segments.</p>
+      <p><strong>Features:</strong> Multi-layer envelopes (slow swells modulating individual waves), three-way spectral crossfade (approaching waves are brighter, receding waves are thinner), perceptual corrections for natural warmth, and stateful continuous playback across generated segments.</p>
       <p>The public Maresono website uses <a href="https://umami.is/" target="_blank" rel="noopener" style="color:var(--accent)">Umami</a> for anonymous, aggregate usage statistics. It records playback and export attempts, successful playback, broad listening-duration milestones, completed exports, and coarse failure categories so the project can be improved. Maresono does not send intensity or volume values, filenames, audio, or exact error messages. Analytics is disabled for local installations, repository forks, and the Railway backend.</p>
       <div class="author">Made by <strong>Matteo Bassi</strong></div>
       <p class="related-tools">More tools by Matteo Bassi: <a href="https://bassimatte.github.io/mantice/" target="_blank" rel="noopener" data-related-tool="mantice">Mantice</a> · <a href="https://bassimatte.github.io/glorb/" target="_blank" rel="noopener" data-related-tool="glorb">Glorb</a> · <a href="https://bassimatte.github.io/campana/" target="_blank" rel="noopener" data-related-tool="campana">Campana</a> · <a href="https://bassimatte.github.io/" target="_blank" rel="noopener" data-portfolio-link="about">All projects</a></p>
@@ -840,7 +840,6 @@
   </div>
 
   <script>
-    const CROSSFADE_SECONDS = 0.8;
     const PLAY_FADE_SECONDS = 1.5;
     const STOP_FADE_SECONDS = 1.0;
     const VOLUME_RAMP_SECONDS = 0.1;
@@ -1360,19 +1359,15 @@
     function scheduleChunk(buffer, startTime, token) {
       const source = audioContext.createBufferSource();
       const gain = audioContext.createGain();
-      const fade = Math.min(CROSSFADE_SECONDS, Math.max(0.12, buffer.duration * 0.1));
       const endTime = startTime + buffer.duration;
-      const sustainStart = Math.min(startTime + fade, endTime);
-      const sustainEnd = Math.max(sustainStart, endTime - fade);
 
       source.buffer = buffer;
       source.connect(gain);
       gain.connect(masterGain);
 
-      gain.gain.setValueAtTime(0, startTime);
-      gain.gain.linearRampToValueAtTime(1, sustainStart);
-      gain.gain.setValueAtTime(1, sustainEnd);
-      gain.gain.linearRampToValueAtTime(0, endTime);
+      // Server chunks share synthesis state and are sample-contiguous. Scheduling
+      // them edge-to-edge preserves their real wave, filter, and spatial phases.
+      gain.gain.setValueAtTime(1, startTime);
 
       const chunk = { source, gain, token };
       activeChunks.add(chunk);
@@ -1383,7 +1378,7 @@
       source.start(startTime);
       source.stop(endTime + 0.01);
 
-      return { endTime, fade };
+      return { endTime };
     }
 
     async function streamChunks(initialBuffer, token) {
@@ -1395,7 +1390,7 @@
 
       while (isPlaying && token === playbackToken) {
         const scheduled = scheduleChunk(buffer, startTime, token);
-        const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime - scheduled.fade);
+        const nextStart = Math.max(audioContext.currentTime + 0.05, scheduled.endTime);
 
         // Wait for the already-fetching next chunk
         let nextBuffer = null;
