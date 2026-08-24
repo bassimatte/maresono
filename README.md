@@ -59,6 +59,18 @@ Workflow:
 At runtime, Maresono only needs the small `.npz` model files; the WAV files are not required.
 The `MARESONO_MODELS_DIR` environment variable can still override the default model directory.
 
+## Freesound release render
+
+Render the four current spectral models as reproducible, upload-ready 5-minute
+48 kHz/24-bit WAV files without loading an entire long render into memory:
+
+```bash
+python render_freesound.py
+```
+
+The files, checksums, descriptions and suggested tags are written to
+`exports/freesound/maresono-release/`. Choose a Freesound license before upload.
+
 ## How It Works
 
 Maresono uses an analysis-resynthesis approach:
