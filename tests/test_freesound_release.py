@@ -5,6 +5,7 @@ import wave
 from pathlib import Path
 
 from render_freesound import (
+    FREESOUND_LICENSE,
     MODELS_DIR,
     PACK_NAME,
     RELEASE_PRESETS,
@@ -56,10 +57,19 @@ class FreesoundReleaseTests(unittest.TestCase):
                 (output_dir / "manifest.json").read_text(encoding="utf-8")
             )
             self.assertEqual(manifest["pack_name"], PACK_NAME)
-            self.assertIsNone(manifest["license"])
+            self.assertEqual(manifest["license"], FREESOUND_LICENSE)
             self.assertEqual(manifest["sounds"][0]["seed"], RELEASE_PRESETS[1].seed)
             self.assertTrue(manifest["sounds"][0]["sha256"])
-            self.assertIn("License: choose before upload.", (
+            self.assertEqual(
+                manifest["sounds"][0]["title"],
+                "Rolling Ocean Waves – Long Relaxing Swells",
+            )
+            first_paragraph, maresono_paragraph = manifest["sounds"][0][
+                "description"
+            ].split("\n\n", 1)
+            self.assertNotIn("Maresono", first_paragraph)
+            self.assertTrue(maresono_paragraph.startswith("Created with Maresono"))
+            self.assertIn("License: Creative Commons 0 (CC0).", (
                 output_dir / "FREESOUND_UPLOAD.md"
             ).read_text(encoding="utf-8"))
 

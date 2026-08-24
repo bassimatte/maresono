@@ -69,7 +69,9 @@ python render_freesound.py
 ```
 
 The files, checksums, descriptions and suggested tags are written to
-`exports/freesound/maresono-release/`. Choose a Freesound license before upload.
+`exports/freesound/maresono-release/`. The release metadata uses the Creative
+Commons 0 (CC0) license and the pack name “Ocean and Sea Waves Generative
+Soundscapes by MARESONO”.
 
 ## How It Works
 
