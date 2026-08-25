@@ -69,8 +69,10 @@
     body {
       margin: 0;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 28px;
       padding: 24px;
       font-family: Inter, system-ui, sans-serif;
       background:
@@ -486,6 +488,74 @@
       color: var(--accent);
     }
 
+    /* Visible About section */
+    .about-maresono {
+      width: min(100%, 820px);
+      padding: clamp(28px, 5vw, 48px);
+      border: 1px solid var(--panel-border);
+      border-radius: 24px;
+      background:
+        linear-gradient(135deg, rgba(45, 212, 191, 0.08), transparent 42%),
+        var(--panel);
+      backdrop-filter: blur(22px);
+      box-shadow: var(--shadow);
+    }
+    .about-maresono-kicker {
+      margin: 0 0 22px;
+      color: var(--accent);
+      font-size: 0.68rem;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+    }
+    .about-maresono-grid {
+      display: grid;
+      grid-template-columns: minmax(210px, 0.8fr) minmax(320px, 1.2fr);
+      gap: clamp(28px, 5vw, 72px);
+    }
+    .about-maresono h2 {
+      max-width: 430px;
+      margin: 0;
+      color: var(--text);
+      font-size: clamp(1.8rem, 4vw, 2.8rem);
+      font-weight: 400;
+      letter-spacing: -0.05em;
+      line-height: 1.05;
+    }
+    .about-maresono-copy {
+      max-width: 620px;
+    }
+    .about-maresono-copy h3 {
+      margin: 0 0 8px;
+      color: var(--text);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .about-maresono-copy p {
+      margin: 0 0 24px;
+      color: var(--muted);
+      font-size: 0.86rem;
+      line-height: 1.75;
+    }
+    .about-maresono-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 24px;
+      padding-top: 4px;
+    }
+    .about-maresono-links a {
+      color: var(--muted);
+      font-size: 0.72rem;
+      letter-spacing: 0.05em;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    .about-maresono-links a:hover,
+    .about-maresono-links a:focus-visible {
+      color: var(--accent);
+    }
+
     .duration-section {
       transition: opacity 0.4s ease, max-height 0.4s ease;
     }
@@ -624,9 +694,18 @@
     }
 
 
+    @media (max-width: 720px) {
+      .about-maresono-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+
     @media (max-width: 520px) {
       .shell {
         padding: 22px;
+      }
+      .about-maresono {
+        padding: 26px 22px;
       }
     }
 
@@ -824,6 +903,29 @@
     </nav>
   </main>
 
+  <section class="about-maresono" aria-labelledby="about-maresono-title">
+    <p class="about-maresono-kicker">About the instrument</p>
+    <div class="about-maresono-grid">
+      <h2 id="about-maresono-title">A sea that never repeats itself.</h2>
+      <div class="about-maresono-copy">
+        <h3>What Maresono creates</h3>
+        <p>Maresono is a free, open-source generative ocean sound synthesizer that creates continuously evolving waves, shorelines, deep currents and storm surf in the browser. Its four sound worlds move from the gentle detail of Calma to the rolling swells of Onda Lunga, the low weight of Profondo and the force of Tempesta.</p>
+
+        <h3>How it works</h3>
+        <p>Each model begins with the spectral analysis of a real handcrafted ocean drum. Instead of replaying or looping the recording, Maresono shapes new noise through learned filters, slow wave envelopes and changing stereo movement, producing a continuous soundscape that does not repeat.</p>
+
+        <h3>What you can use it for</h3>
+        <p>Use Maresono for relaxation, meditation, sleep, ambient composition, installations, cinematic and game atmospheres, or experimental sound design. Choose a sound world, adjust its intensity, listen continuously or export the result as a WAV file.</p>
+
+        <div class="about-maresono-links">
+          <a href="https://github.com/bassimatte/maresono" target="_blank" rel="noopener" data-analytics-destination="source">View source ↗</a>
+          <a href="https://freesound.org/people/bassimat/" target="_blank" rel="noopener" data-analytics-destination="freesound">Sound work ↗</a>
+          <a href="https://bassimatte.github.io/" data-portfolio-link="about">More tools by Matteo Bassi ↗</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
 
   <div class="modal-overlay" id="infoModal">
     <div class="modal">
@@ -890,7 +992,7 @@
         duration: MARESONO_EXPORT_DURATIONS,
       },
       outbound_opened: {
-        destination: ['portfolio', 'source'],
+        destination: ['portfolio', 'source', 'freesound'],
       },
       related_tool_opened: {
         tool: ['mantice', 'glorb', 'campana'],

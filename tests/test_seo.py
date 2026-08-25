@@ -62,6 +62,28 @@ class SeoTests(unittest.TestCase):
                 r'<p class="product-intro">[^<]*generative ocean sound synthesizer[^<]*</p>',
             )
 
+    def test_about_maresono_is_visible_and_structured(self):
+        for html in (self.static_html, self.docs_html):
+            self.assertIn(
+                '<section class="about-maresono" aria-labelledby="about-maresono-title">',
+                html,
+            )
+            self.assertIn(
+                '<h2 id="about-maresono-title">A sea that never repeats itself.</h2>',
+                html,
+            )
+            for heading in (
+                "What Maresono creates",
+                "How it works",
+                "What you can use it for",
+            ):
+                self.assertIn(f"<h3>{heading}</h3>", html)
+            self.assertIn("free, open-source generative ocean sound synthesizer", html)
+            self.assertIn("Calma", html)
+            self.assertIn("Onda Lunga", html)
+            self.assertIn("Profondo", html)
+            self.assertIn("Tempesta", html)
+
     def test_favicon_is_deployed_with_both_frontends(self):
         static_favicon = Path("engine/static/favicon.svg")
         docs_favicon = Path("docs/favicon.svg")

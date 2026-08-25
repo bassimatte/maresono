@@ -89,7 +89,7 @@ class AnalyticsTests(unittest.TestCase):
             self.assertIn('href="https://github.com/bassimatte/maresono"', html)
             self.assertIn('data-analytics-destination="portfolio"', html)
             self.assertIn('data-analytics-destination="source"', html)
-            self.assertIn("destination: ['portfolio', 'source']", html)
+            self.assertIn("destination: ['portfolio', 'source', 'freesound']", html)
 
     def test_about_window_links_to_related_tools_without_self_linking(self):
         for html in (self.static_html, self.docs_html):
