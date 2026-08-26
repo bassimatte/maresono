@@ -5,7 +5,7 @@ from pathlib import Path
 
 
 CANONICAL_URL = "https://bassimatte.github.io/maresono/"
-EXPECTED_TITLE = "Maresono — Generative Ocean Sound Synthesizer"
+EXPECTED_TITLE = "Maresono — Generative Ocean Waves Synthesizer"
 
 
 class SeoTests(unittest.TestCase):
@@ -59,7 +59,7 @@ class SeoTests(unittest.TestCase):
         for html in (self.static_html, self.docs_html):
             self.assertRegex(
                 html,
-                r'<p class="product-intro">[^<]*generative ocean sound synthesizer[^<]*</p>',
+                r'<p class="product-intro">[^<]*generative synthesizer for ocean waves[^<]*</p>',
             )
 
     def test_about_maresono_is_visible_and_structured(self):
@@ -78,7 +78,7 @@ class SeoTests(unittest.TestCase):
                 "What you can use it for",
             ):
                 self.assertIn(f"<h3>{heading}</h3>", html)
-            self.assertIn("free, open-source generative ocean sound synthesizer", html)
+            self.assertIn("free, open-source generative synthesizer for ocean waves", html)
             self.assertIn("Calma", html)
             self.assertIn("Onda Lunga", html)
             self.assertIn("Profondo", html)

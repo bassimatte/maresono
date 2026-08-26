@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Maresono — Generative Ocean Sound Synthesizer</title>
-  <meta name="description" content="Create infinite, non-looping ocean soundscapes in your browser with Maresono, a generative synthesizer trained on real handcrafted ocean drums." />
+  <title>Maresono — Generative Ocean Waves Synthesizer</title>
+  <meta name="description" content="Create infinite, non-looping soundscapes of ocean waves in your browser with Maresono, a generative synthesizer trained on real handcrafted ocean drums." />
   <meta name="author" content="Matteo Bassi" />
   <meta name="robots" content="index, follow" />
   <meta name="theme-color" content="#0a1628" />
@@ -12,20 +12,20 @@
   <link rel="icon" type="image/svg+xml" sizes="any" href="./favicon.svg" />
   <meta property="og:type" content="website" />
   <meta property="og:site_name" content="Maresono" />
-  <meta property="og:title" content="Maresono — Generative Ocean Sound Synthesizer" />
-  <meta property="og:description" content="Create infinite, non-looping ocean soundscapes from real handcrafted ocean drums." />
+  <meta property="og:title" content="Maresono — Generative Ocean Waves Synthesizer" />
+  <meta property="og:description" content="Create infinite, non-looping soundscapes of ocean waves from real handcrafted ocean drums." />
   <meta property="og:url" content="https://bassimatte.github.io/maresono/" />
   <meta property="og:locale" content="en_US" />
   <meta name="twitter:card" content="summary" />
-  <meta name="twitter:title" content="Maresono — Generative Ocean Sound Synthesizer" />
-  <meta name="twitter:description" content="Create infinite, non-looping ocean soundscapes from real handcrafted ocean drums." />
+  <meta name="twitter:title" content="Maresono — Generative Ocean Waves Synthesizer" />
+  <meta name="twitter:description" content="Create infinite, non-looping soundscapes of ocean waves from real handcrafted ocean drums." />
   <script type="application/ld+json">
   {
     "@context": "https://schema.org",
     "@type": "WebApplication",
     "name": "Maresono",
     "url": "https://bassimatte.github.io/maresono/",
-    "description": "A generative ocean sound synthesizer trained on real handcrafted ocean drums, creating infinite, non-looping soundscapes in the browser.",
+    "description": "A generative synthesizer for ocean waves trained on real handcrafted ocean drums, creating infinite, non-looping soundscapes in the browser.",
     "applicationCategory": "MultimediaApplication",
     "applicationSubCategory": "Generative audio synthesizer",
     "operatingSystem": "Any",
@@ -814,7 +814,7 @@
     <button class="info-btn" id="infoBtn" title="About Maresono">i</button>
     <h1>MARESONO</h1>
     <p class="subtitle">the sound of the sea</p>
-    <p class="product-intro">A generative ocean sound synthesizer trained on real handcrafted ocean drums, creating infinite, non-looping soundscapes in your browser.</p>
+    <p class="product-intro">A generative synthesizer for ocean waves trained on real handcrafted ocean drums, creating infinite, non-looping soundscapes in your browser.</p>
 
     <div class="orb-wrap">
       <canvas id="waveCanvas" class="wave-canvas" width="300" height="180" aria-hidden="true"></canvas>
@@ -909,7 +909,7 @@
       <h2 id="about-maresono-title">A sea that never repeats itself.</h2>
       <div class="about-maresono-copy">
         <h3>What Maresono creates</h3>
-        <p>Maresono is a free, open-source generative ocean sound synthesizer that creates continuously evolving waves, shorelines, deep currents and storm surf in the browser. Its four sound worlds move from the gentle detail of Calma to the rolling swells of Onda Lunga, the low weight of Profondo and the force of Tempesta.</p>
+        <p>Maresono is a free, open-source generative synthesizer for ocean waves that creates continuously evolving shorelines, deep currents and storm surf in the browser. Its four sound worlds move from the gentle detail of Calma to the rolling swells of Onda Lunga, the low weight of Profondo and the force of Tempesta.</p>
 
         <h3>How it works</h3>
         <p>Each model begins with the spectral analysis of a real handcrafted ocean drum. Instead of replaying or looping the recording, Maresono shapes new noise through learned filters, slow wave envelopes and changing stereo movement, producing a continuous soundscape that does not repeat.</p>
@@ -931,9 +931,9 @@
     <div class="modal">
       <button class="modal-close" id="modalClose">&times;</button>
       <h2>About Maresono</h2>
-      <p><strong>Maresono</strong> (mare + suono — sea + sound) is a generative ocean sound engine that learns from real ocean drum recordings and creates infinite, never-repeating soundscapes.</p>
+      <p><strong>Maresono</strong> (mare + suono — sea + sound) is a generative sound engine for ocean waves that learns from real ocean drum recordings and creates infinite, never-repeating soundscapes.</p>
       <p><strong>How it works:</strong> Each model is built by analyzing the spectral fingerprint of a real handcrafted ocean drum. The engine extracts the frequency shape, amplitude dynamics, and timbral variation from the recording, then resynthesizes new audio by shaping noise through learned FIR filters — producing sound that is spectrally identical to the real instrument but infinitely generatable.</p>
-      <p><strong>Philosophy:</strong> Rather than simulating physics or looping samples, Maresono takes an analysis-resynthesis approach inspired by how our ears perceive the sea — layers of spectral texture, slow swells, and micro-variations that never quite repeat. The result is a meditative, always-evolving ocean that lives somewhere between the real and the imagined.</p>
+      <p><strong>Philosophy:</strong> Rather than simulating physics or looping samples, Maresono takes an analysis-resynthesis approach inspired by how our ears perceive the sea — layers of spectral texture, slow swells, and micro-variations that never quite repeat. The result is a meditative, always-evolving field of ocean waves that lives somewhere between the real and the imagined.</p>
       <p><strong>Features:</strong> Multi-layer envelopes (slow swells modulating individual waves), three-way spectral crossfade (approaching waves are brighter, receding waves are thinner), perceptual corrections for natural warmth, and stateful continuous playback across generated segments.</p>
       <p>The public Maresono website uses <a href="https://umami.is/" target="_blank" rel="noopener" style="color:var(--accent)">Umami</a> for anonymous, aggregate usage statistics. It records playback and export attempts, successful playback, broad listening-duration milestones, completed exports, and coarse failure categories so the project can be improved. Maresono does not send intensity or volume values, filenames, audio, or exact error messages. Analytics is disabled for local installations, repository forks, and the Railway backend.</p>
       <div class="author">Made by <strong>Matteo Bassi</strong></div>

@@ -72,7 +72,7 @@ RELEASE_PRESETS = (
         display_name="Profondo",
         release_title="Deep Ocean Rumble – Dark Sea Ambience",
         character=(
-            "A deep and shadowy ocean atmosphere with low-frequency movement, distant waves, and "
+            "A deep and shadowy atmosphere of ocean waves with low-frequency movement, distant waves, and "
             "the slow pull of an underwater current. The sound has more weight than a typical "
             "shoreline ambience, combining dark rumbling textures with evolving layers of water. "
             "Suitable for cinematic atmospheres, underwater scenes, dark ambient music, "
@@ -136,7 +136,7 @@ def _release_description(preset: ReleasePreset, duration: float,
                          sample_rate: int, subtype: str) -> str:
     return (
         f"{preset.character}\n\n"
-        "Created with Maresono, Matteo Bassi’s generative ocean-sound instrument, using "
+        "Created with Maresono, Matteo Bassi’s generative instrument for ocean waves, using "
         "spectral characteristics learned from a handcrafted ocean drum. This is a newly "
         "synthesized, non-looping soundscape rather than a field recording. "
         f"{duration / 60:g} minutes, stereo, {sample_rate / 1000:g} "

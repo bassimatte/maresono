@@ -2,7 +2,7 @@
 
 *Mare + Suono — The Sound of the Sea*
 
-A digital ocean wave sound synthesizer that learns from real ocean drum recordings
+A digital synthesizer for ocean waves that learns from real ocean drum recordings
 and generates infinite, non-looping wave audio using spectral resynthesis.
 
 ## Features
