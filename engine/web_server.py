@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import asynccontextmanager, suppress
 import io
 import os
 import re
@@ -37,19 +38,10 @@ _EXPORTS_DIR = _REPO_DIR / "exports"
 _DEFAULT_MODELS_DIR = _REPO_DIR / "models"
 _PREVIEW_SECONDS = 30.0
 _PREVIEW_SESSION_TTL = 15 * 60.0
-_MAX_PREVIEW_SESSIONS = 32
+_PREVIEW_CLEANUP_INTERVAL = 60.0
+_MAX_PREVIEW_SESSIONS = 8
 
 _EXPORTS_DIR.mkdir(exist_ok=True)
-
-app = FastAPI(title="Maresono", version="2.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 
 class RenderRequest(BaseModel):
     model: str
@@ -75,6 +67,55 @@ class _PreviewSession:
 
 _preview_sessions: dict[str, _PreviewSession] = {}
 _preview_sessions_lock = threading.Lock()
+
+
+def _cleanup_expired_preview_sessions(now: float | None = None) -> int:
+    if now is None:
+        now = time.monotonic()
+    with _preview_sessions_lock:
+        expired = [
+            key for key, session in _preview_sessions.items()
+            if now - session.last_used > _PREVIEW_SESSION_TTL
+        ]
+        for key in expired:
+            _preview_sessions.pop(key, None)
+    return len(expired)
+
+
+def _close_preview_session(session_id: str) -> bool:
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", session_id):
+        raise HTTPException(status_code=400, detail="Invalid preview session ID.")
+    with _preview_sessions_lock:
+        return _preview_sessions.pop(session_id, None) is not None
+
+
+async def _preview_session_cleanup_loop() -> None:
+    while True:
+        await asyncio.sleep(_PREVIEW_CLEANUP_INTERVAL)
+        _cleanup_expired_preview_sessions()
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    cleanup_task = asyncio.create_task(_preview_session_cleanup_loop())
+    try:
+        yield
+    finally:
+        cleanup_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await cleanup_task
+        with _preview_sessions_lock:
+            _preview_sessions.clear()
+
+
+app = FastAPI(title="Maresono", version="2.0", lifespan=_lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 def _slugify(value: str) -> str:
@@ -140,14 +181,8 @@ def _get_preview_session(request: RenderRequest) -> _PreviewSession:
         raise HTTPException(status_code=400, detail="Invalid preview session ID.")
 
     now = time.monotonic()
+    _cleanup_expired_preview_sessions(now)
     with _preview_sessions_lock:
-        expired = [
-            key for key, session in _preview_sessions.items()
-            if now - session.last_used > _PREVIEW_SESSION_TTL
-        ]
-        for key in expired:
-            _preview_sessions.pop(key, None)
-
         session = _preview_sessions.get(session_id)
         if session is not None:
             same_model = session.model_name == request.model
@@ -191,7 +226,7 @@ def _export_filename(filename: str, duration: float, intensity: float) -> str:
     return f"{stem}-{duration_tag}-{intensity_tag}-{stamp}.wav"
 
 
-def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesIO, str]:
+def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesIO | bytes, str]:
     duration = _PREVIEW_SECONDS if preview else request.duration
     # Allow client to request shorter preview (for quick-start first chunk)
     if preview and hasattr(request, 'preview_duration') and request.preview_duration:
@@ -205,7 +240,7 @@ def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesI
                 chunk_index = session.last_chunk_index + 1
             cache_key = (chunk_index, duration, request.model, request.intensity)
             if cache_key == session.cached_key and session.cached_wav is not None:
-                return io.BytesIO(session.cached_wav), session.cached_filename
+                return session.cached_wav, session.cached_filename
             if chunk_index != session.last_chunk_index + 1:
                 raise HTTPException(
                     status_code=409,
@@ -225,7 +260,7 @@ def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesI
             session.cached_key = cache_key
             session.cached_wav = buffer.getvalue()
             session.cached_filename = filename
-            return io.BytesIO(session.cached_wav), filename
+            return session.cached_wav, filename
 
     # Stateless previews remain supported for older clients and API callers.
     # Playback uses the same full-resolution spectral evolution as exports.
@@ -236,7 +271,8 @@ def _render_package(request: RenderRequest, *, preview: bool) -> tuple[io.BytesI
         export_path = _EXPORTS_DIR / filename
         sf.write(str(export_path), audio, sr, format="WAV", subtype=config.BIT_DEPTH)
 
-    return _audio_to_wav_buffer(audio, sr), filename
+    buffer = _audio_to_wav_buffer(audio, sr)
+    return (buffer.getvalue() if preview else buffer), filename
 
 
 @app.get("/")
@@ -270,12 +306,18 @@ async def render_audio(request: RenderRequest):
 
 @app.post("/api/preview")
 async def preview_audio(request: RenderRequest):
-    buffer, filename = await asyncio.to_thread(_render_package, request, preview=True)
+    wav, filename = await asyncio.to_thread(_render_package, request, preview=True)
     return Response(
-        content=buffer.getvalue(),
+        content=wav,
         media_type="audio/wav",
         headers={"Content-Disposition": f'inline; filename="preview-{filename}"'},
     )
+
+
+@app.post("/api/preview/close", status_code=204)
+async def close_preview_session(session_id: str):
+    _close_preview_session(session_id)
+    return Response(status_code=204)
 
 
 def run_server(host: str = "127.0.0.1", port: int | None = None) -> None:

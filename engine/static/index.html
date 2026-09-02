@@ -1161,6 +1161,7 @@
     let precaching = false;
     let paramChanged = false;
     let playbackSessionId = null;
+    let playbackAbortController = null;
     let nextChunkIndex = 0;
     const activeChunks = new Set();
 
@@ -1354,11 +1355,28 @@
       activeChunks.clear();
     }
 
-    function hardStopPlayback() {
+    function closePreviewSession(sessionId, useBeacon = false) {
+      if (!sessionId) return;
+      const url = `${API_BASE}/api/preview/close?session_id=${encodeURIComponent(sessionId)}`;
+      if (useBeacon && navigator.sendBeacon) {
+        navigator.sendBeacon(url);
+        return;
+      }
+      fetch(url, { method: 'POST', keepalive: true }).catch(() => {});
+    }
+
+    function hardStopPlayback(useBeacon = false) {
       if (stopTimer) {
         clearTimeout(stopTimer);
         stopTimer = null;
       }
+      if (playbackAbortController) {
+        playbackAbortController.abort();
+        playbackAbortController = null;
+      }
+      const sessionId = playbackSessionId;
+      playbackSessionId = null;
+      closePreviewSession(sessionId, useBeacon);
       stopAllChunks();
       stopIOSKeepAlive();
       playBtn.textContent = '▶';
@@ -1443,7 +1461,7 @@
       return request;
     }
 
-    async function fetchChunk(request) {
+    async function fetchChunk(request, signal = null) {
       const payload = {
         model: request.model,
         duration: selectedDuration,
@@ -1452,7 +1470,7 @@
         session_id: request.sessionId,
         chunk_index: request.chunkIndex
       };
-      const response = await fetchAudio(`${API_BASE}/api/preview`, payload);
+      const response = await fetchAudio(`${API_BASE}/api/preview`, payload, signal);
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
       return await audioContext.decodeAudioData(arrayBuffer.slice(0));
@@ -1488,7 +1506,7 @@
       let startTime = audioContext.currentTime + 0.05;
       startIOSKeepAlive();
       let nextRequest = reserveNextChunk();
-      let nextBufferPromise = fetchChunk(nextRequest);
+      let nextBufferPromise = fetchChunk(nextRequest, playbackAbortController.signal);
 
       while (isPlaying && token === playbackToken) {
         const scheduled = scheduleChunk(buffer, startTime, token);
@@ -1502,12 +1520,12 @@
           if (!isPlaying || token !== playbackToken) break;
           // Retry the same chunk index so the backend can return its cached result.
           try {
-            nextBuffer = await fetchChunk(nextRequest);
+            nextBuffer = await fetchChunk(nextRequest, playbackAbortController.signal);
           } catch (e2) {
             if (!isPlaying || token !== playbackToken) break;
             setStatus(e2.message || 'Generating next wave...');
             await sleep(500);
-            nextBuffer = await fetchChunk(nextRequest);
+            nextBuffer = await fetchChunk(nextRequest, playbackAbortController.signal);
           }
         }
 
@@ -1515,7 +1533,7 @@
 
         // Keep exactly one ordered request ahead of playback.
         const afterNextRequest = reserveNextChunk();
-        const afterNextPromise = fetchChunk(afterNextRequest);
+        const afterNextPromise = fetchChunk(afterNextRequest, playbackAbortController.signal);
 
         // Wait until it's almost time to play the next chunk
         const now = audioContext.currentTime;
@@ -1574,6 +1592,7 @@
         const cachedMatches = precachedPreview
           && precachedPreview.model === requestedModel
           && Math.abs(precachedPreview.intensity - requestedIntensity) <= 0.005;
+        playbackAbortController = new AbortController();
 
         // Continue the pre-cached session when its parameters still match.
         let decoded;
@@ -1582,9 +1601,13 @@
           playbackSessionId = precachedPreview.sessionId;
           nextChunkIndex = 1;
         } else {
+          if (precachedPreview) closePreviewSession(precachedPreview.sessionId);
           playbackSessionId = createPreviewSessionId();
           nextChunkIndex = 0;
-          decoded = await fetchChunk(reserveNextChunk(15));
+          decoded = await fetchChunk(
+            reserveNextChunk(15),
+            playbackAbortController.signal
+          );
         }
         precachedPreview = null;
         const token = playbackToken + 1;
@@ -1908,7 +1931,8 @@
     exportBtn.addEventListener('click', exportRender);
     window.addEventListener('resize', resizeWaveCanvas);
     window.addEventListener('beforeunload', () => {
-      hardStopPlayback();
+      hardStopPlayback(true);
+      if (precachedPreview) closePreviewSession(precachedPreview.sessionId, true);
       if (animationFrame) cancelAnimationFrame(animationFrame);
     });
 

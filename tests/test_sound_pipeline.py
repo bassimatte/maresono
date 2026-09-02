@@ -14,6 +14,10 @@ MODELS_DIR = Path(__file__).resolve().parents[1] / "models"
 
 
 class SoundPipelineTests(unittest.TestCase):
+    def tearDown(self):
+        with web_server._preview_sessions_lock:
+            web_server._preview_sessions.clear()
+
     def test_onda_lunga_uses_slower_learned_timing(self):
         calma = SpectralSynthesizer(
             SpectralModel.load(MODELS_DIR / "Calma.npz"), seed=1
@@ -49,11 +53,57 @@ class SoundPipelineTests(unittest.TestCase):
         retry_buffer, _ = web_server._render_package(first, preview=True)
         second_buffer, _ = web_server._render_package(second, preview=True)
 
-        self.assertEqual(first_buffer.getvalue(), retry_buffer.getvalue())
-        self.assertNotEqual(first_buffer.getvalue(), second_buffer.getvalue())
-        with wave.open(BytesIO(first_buffer.getvalue()), "rb") as preview_wav:
+        self.assertEqual(first_buffer, retry_buffer)
+        self.assertNotEqual(first_buffer, second_buffer)
+        with wave.open(BytesIO(first_buffer), "rb") as preview_wav:
             self.assertEqual(preview_wav.getframerate(), 44_100)
             self.assertEqual(preview_wav.getnchannels(), 2)
+
+    def test_preview_sessions_can_be_closed_explicitly(self):
+        session_id = f"test-{uuid4().hex}"
+        request = web_server.RenderRequest(
+            model="Onda Lunga.npz",
+            intensity=0.25,
+            preview_duration=0.1,
+            session_id=session_id,
+            chunk_index=0,
+        )
+        web_server._render_package(request, preview=True)
+
+        self.assertIn(session_id, web_server._preview_sessions)
+        self.assertTrue(web_server._close_preview_session(session_id))
+        self.assertNotIn(session_id, web_server._preview_sessions)
+
+    def test_preview_cleanup_removes_expired_sessions(self):
+        session_id = f"test-{uuid4().hex}"
+        request = web_server.RenderRequest(
+            model="Onda Lunga.npz",
+            intensity=0.25,
+            session_id=session_id,
+        )
+        session = web_server._get_preview_session(request)
+        session.last_used = 100.0
+
+        removed = web_server._cleanup_expired_preview_sessions(
+            100.0 + web_server._PREVIEW_SESSION_TTL + 1.0
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertNotIn(session_id, web_server._preview_sessions)
+
+    def test_preview_session_count_is_bounded(self):
+        for index in range(web_server._MAX_PREVIEW_SESSIONS + 2):
+            web_server._get_preview_session(web_server.RenderRequest(
+                model="Onda Lunga.npz",
+                intensity=0.25,
+                session_id=f"bounded-{index}",
+            ))
+
+        self.assertEqual(
+            len(web_server._preview_sessions),
+            web_server._MAX_PREVIEW_SESSIONS,
+        )
+        self.assertNotIn("bounded-0", web_server._preview_sessions)
 
     def test_synthesis_state_survives_chunk_boundaries(self):
         synthesizer = SpectralSynthesizer(
